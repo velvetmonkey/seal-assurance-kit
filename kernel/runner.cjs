@@ -47,6 +47,23 @@ async function decide(config, { tool, args = {}, approvals = [], now = 1000 }) {
   return { raw, verdict: base.verdict, receipt: base };
 }
 
+// Ordered multi-step session in ONE init (stateful kernels: temporal/budget/linear
+// only fire across a trace). Returns the LAST step's verdict.
+async function decideSeq(config, steps, tool) {
+  const { M, cfg } = await load();
+  const ir = JSON.parse(M.ccall("seal_init", "string", ["string", "string"],
+    [cfg.buildEnvelope(config), cfg.PUBKEY]));
+  if (ir.ok !== true) throw new Error("seal_init failed: " + JSON.stringify(ir));
+  let raw, step;
+  steps.forEach((s, i) => {
+    step = cfg.buildStepInput({ ...s, id: i + 1 });
+    raw = M.ccall("seal_decide", "string", ["string"], [step]);
+  });
+  const parsed = cfg.parseVerdict(raw, tool);
+  const verdict = parsed.verdict === "DENY" ? "BLOCK" : parsed.verdict;
+  return { raw, verdict, parsed };
+}
+
 async function pinnedSha() { const { K } = await load(); return K.KERNEL_WASM_SHA256; }
 
-module.exports = { load, decide, kernelSha, pinnedSha };
+module.exports = { load, decide, decideSeq, kernelSha, pinnedSha };

@@ -5,9 +5,30 @@ commands, PASS/FAIL/WARN output a stranger can run against their own boundary.
 
 ```
 seal verify <receipt.json>    verify a decision receipt (re-derive, trust nothing)
-seal test   <server|profile>  MCP boundary conformance oracle      [coming]
+seal test   [--profile L0]    MCP boundary conformance oracle
 seal scan   <tools> <policy>  MCP policy coverage auditor          [coming]
 ```
+
+## `seal test` (live today)
+
+```sh
+node bin/seal test --profile L0
+```
+
+Runs the published L0 conformance corpus (named bypass / stale-capability / consensus /
+convergence attack traces) through the boundary and asserts each is deterministically
+blocked by the right gate:
+
+```
+seal test  profile=L0  cases=5
+  PASS  safety              destructive-sql     blocked by safety
+  PASS  consensus           pay-quorum-missing  blocked by consensus
+  PASS  temporal (stateful) temporal-stale-cap  blocked by temporal
+  CONFORMANT  (5/5 traces, all four gates + deny-rule)
+```
+
+Verdicts are read from the kernel at runtime, never hardcoded. Today it self-tests the
+vendored reference kernel; `seal test <server-url>` for live MCP endpoints is next.
 
 ## Why
 
