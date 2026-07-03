@@ -1,0 +1,14 @@
+{
+  "tools": [
+    { "name": "db.query", "description": "Run a read-only SQL query", "annotations": { "readOnlyHint": true } },
+    { "name": "db.execute", "description": "Execute a SQL statement (insert/update/delete)", "annotations": { "destructiveHint": true } },
+    { "name": "payments.send", "description": "Send a payment to a payee" },
+    { "name": "file.read", "description": "Read a file from disk" },
+    { "name": "file.write", "description": "Write bytes to a file" },
+    { "name": "http.post", "description": "POST a body to an external URL" },
+    { "name": "secret.read", "description": "Read a secret from the vault" },
+    { "name": "shell.exec", "description": "Execute an arbitrary shell command" },
+    { "name": "search.docs", "description": "Search the documentation index" },
+    { "name": "jira.deleteIssue", "description": "Delete a Jira issue" }
+  ]
+}

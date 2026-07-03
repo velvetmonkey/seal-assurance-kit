@@ -1,0 +1,12 @@
+{
+  "default": "uncovered",
+  "rules": {
+    "db.query": { "guard": "allow", "effect": "readonly" },
+    "db.execute": { "guard": "approval" },
+    "payments.send": { "guard": "quorum:2-of-3" },
+    "secret.read": { "guard": "approval" },
+    "shell.exec": { "guard": "deny" },
+    "file.read": { "guard": "allow", "effect": "readonly" },
+    "search.*": { "guard": "allow", "effect": "readonly" }
+  }
+}

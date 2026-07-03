@@ -1,0 +1,99 @@
+// SPDX-License-Identifier: Apache-2.0
+// `seal scan <tools.json> <policy.json>` — MCP policy coverage auditor.
+// `seal scan diff <old-tools.json> <new-tools.json> <policy.json>`
+//
+// Answers the question every agent-platform buyer actually has: of the tools this
+// server exposes, which can mutate state, which are guarded, which are denied, and
+// which are UNCOVERED (effectful with no policy). Effect is read from MCP tool
+// annotations when present, else inferred from a verb heuristic; unknown effect is
+// treated as mutating (fail-safe). Exits non-zero if any mutating tool is uncovered,
+// so it drops straight into CI.
+const fs = require("fs");
+
+const MUTATING_VERBS = /\b(write|delete|remove|drop|send|pay|transfer|execute|exec|run|create|insert|update|patch|put|post|issue|revoke|mint|grant|set|modify|destroy|purge|deploy|publish|approve|move|rename)\b/i;
+const READONLY_VERBS = /\b(read|get|list|query|search|fetch|show|view|describe|inspect|status|count)\b/i;
+
+function readJson(p) { return JSON.parse(fs.readFileSync(p, "utf8")); }
+function toolList(doc) { return Array.isArray(doc) ? doc : (doc.tools || []); }
+
+// mutating | readonly  — annotations win, then policy-declared effect, then heuristic.
+function effectOf(tool, rule) {
+  const a = tool.annotations || {};
+  if (a.readOnlyHint === true) return "readonly";
+  if (a.destructiveHint === true || a.idempotentHint === false) return "mutating";
+  if (rule && rule.effect) return rule.effect;
+  const text = `${tool.name} ${tool.description || ""}`;
+  if (MUTATING_VERBS.test(text)) return "mutating";
+  if (READONLY_VERBS.test(text)) return "readonly";
+  return "mutating"; // unknown => fail-safe: must be covered
+}
+
+// exact match wins; else longest matching "prefix.*" glob.
+function ruleFor(name, rules) {
+  if (rules[name]) return rules[name];
+  let best = null, bestLen = -1;
+  for (const key of Object.keys(rules)) {
+    if (key.endsWith("*") && name.startsWith(key.slice(0, -1)) && key.length > bestLen) {
+      best = rules[key]; bestLen = key.length;
+    }
+  }
+  return best;
+}
+
+function classify(tool, policy) {
+  const rule = ruleFor(tool.name, policy.rules || {});
+  const effect = effectOf(tool, rule);
+  if (!rule) return { bucket: effect === "mutating" ? "uncovered" : "readonly", effect, guard: null };
+  const guard = rule.guard || "allow";
+  if (guard === "deny") return { bucket: "denied", effect, guard };
+  if (guard === "allow") return { bucket: effect === "mutating" ? "allowed-ungated" : "readonly", effect, guard };
+  return { bucket: "guarded", effect, guard };
+}
+
+function scan(toolsPath, policyPath) {
+  const tools = toolList(readJson(toolsPath));
+  const policy = readJson(policyPath);
+  const buckets = { guarded: [], denied: [], "allowed-ungated": [], uncovered: [], readonly: [] };
+  for (const t of tools) {
+    const c = classify(t, policy);
+    buckets[c.bucket].push({ name: t.name, guard: c.guard, effect: c.effect });
+  }
+  const show = (label, arr, fmt = (x) => x.name) => {
+    if (!arr.length) return;
+    console.log(`\n${label} (${arr.length}):`);
+    for (const x of arr) console.log(`  ${fmt(x)}`);
+  };
+  console.log(`seal scan  ${toolsPath}  x  ${policyPath}   (${tools.length} tools)`);
+  show("GUARDED", buckets.guarded, (x) => `${x.name}  [${x.guard}]`);
+  show("DENIED", buckets.denied);
+  show("readonly (informational)", buckets.readonly);
+  show("WARN  allowed but ungated (mutating, guard=allow)", buckets["allowed-ungated"]);
+  show("FAIL  UNCOVERED effectful tools", buckets.uncovered);
+  const nUncovered = buckets.uncovered.length, nWarn = buckets["allowed-ungated"].length;
+  console.log(`\n  ${nUncovered ? "FAIL" : "PASS"}  ${nUncovered} uncovered, ${nWarn} ungated, ` +
+    `${buckets.guarded.length} guarded, ${buckets.denied.length} denied, ${buckets.readonly.length} read-only`);
+  return nUncovered === 0;
+}
+
+function diff(oldPath, newPath, policyPath) {
+  const oldNames = new Set(toolList(readJson(oldPath)).map((t) => t.name));
+  const newTools = toolList(readJson(newPath));
+  const policy = readJson(policyPath);
+  const added = newTools.filter((t) => !oldNames.has(t.name));
+  const removed = [...oldNames].filter((n) => !newTools.some((t) => t.name === n));
+  console.log(`seal scan diff  ${oldPath} -> ${newPath}`);
+  if (added.length) {
+    console.log(`\nNEW since last scan (${added.length}):`);
+    for (const t of added) {
+      const c = classify(t, policy);
+      console.log(`  ${t.name}  ->  ${c.bucket}${c.guard ? " [" + c.guard + "]" : ""}`);
+    }
+  }
+  if (removed.length) console.log(`\nREMOVED (${removed.length}):\n  ${removed.join("\n  ")}`);
+  const newUncovered = added.filter((t) => classify(t, policy).bucket === "uncovered");
+  console.log(`\n  ${newUncovered.length ? "FAIL" : "PASS"}  ${added.length} new, ${removed.length} removed, ` +
+    `${newUncovered.length} new-and-uncovered`);
+  return newUncovered.length === 0;
+}
+
+module.exports = { scan, diff };

@@ -6,8 +6,30 @@ commands, PASS/FAIL/WARN output a stranger can run against their own boundary.
 ```
 seal verify <receipt.json>    verify a decision receipt (re-derive, trust nothing)
 seal test   [--profile L0]    MCP boundary conformance oracle
-seal scan   <tools> <policy>  MCP policy coverage auditor          [coming]
+seal scan   <tools> <policy>  MCP policy coverage auditor
 ```
+
+## `seal scan` (live today)
+
+"We have 47 MCP tools. Which mutate state? Which are guarded? Which are uncovered?
+What changed since last week?" Point it at a `tools/list` and a coverage policy:
+
+```sh
+node bin/seal scan fixtures/tools.json fixtures/policy.json
+node bin/seal scan diff fixtures/tools-prev.json fixtures/tools.json fixtures/policy.json
+```
+
+```
+GUARDED (3):  db.execute [approval]   payments.send [quorum:2-of-3]   secret.read [approval]
+DENIED  (1):  shell.exec
+FAIL  UNCOVERED effectful tools (3):  file.write   http.post   jira.deleteIssue
+  FAIL  3 uncovered, 0 ungated, 3 guarded, 1 denied, 3 read-only
+```
+
+Effect is read from MCP tool `annotations` (`readOnlyHint` / `destructiveHint`) when
+present, else inferred from a verb heuristic; unknown effect is treated as mutating
+(fail-safe). Exits non-zero when a mutating tool is uncovered, so `seal scan` drops
+straight into CI as a governance gate.
 
 ## `seal test` (live today)
 

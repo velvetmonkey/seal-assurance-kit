@@ -20,15 +20,23 @@ async function main() {
     process.exit(ok ? 0 : 1);
   }
   if (cmd === "scan") {
-    console.log("seal scan  — MCP policy coverage auditor (tools/list -> guarded/denied/uncovered/new). Next build.");
-    process.exit(2);
+    const { scan, diff } = require(path.join(__dirname, "../src/scan.cjs"));
+    if (process.argv[3] === "diff") {
+      const [o, n, p] = process.argv.slice(4);
+      if (!o || !n || !p) { console.error("usage: seal scan diff <old-tools.json> <new-tools.json> <policy.json>"); process.exit(2); }
+      process.exit(diff(path.resolve(o), path.resolve(n), path.resolve(p)) ? 0 : 1);
+    }
+    const [t, p] = process.argv.slice(3);
+    if (!t || !p) { console.error("usage: seal scan <tools.json> <policy.json>"); process.exit(2); }
+    process.exit(scan(path.resolve(t), path.resolve(p)) ? 0 : 1);
   }
   console.log([
     "seal assurance kit",
     "",
     "  seal verify <receipt.json>    verify a decision receipt (re-derive, trust nothing)",
     "  seal test   [--profile L0]    MCP boundary conformance oracle",
-    "  seal scan   <tools> <policy>  MCP policy coverage auditor          [coming]",
+    "  seal scan   <tools> <policy>  MCP policy coverage auditor",
+    "  seal scan diff <old> <new> <policy>   what changed since last scan",
   ].join("\n"));
   process.exit(cmd ? 2 : 0);
 }
