@@ -1,0 +1,11 @@
+seal assurance kit
+Copyright (c) 2026 Ben Cassie
+
+This product vendors the public seal kernel and its browser glue from the
+seal-check project (Apache-2.0):
+  kernel/kernel.js, kernel/seal-config.js, kernel/wasm/seal.js, kernel/wasm/seal.wasm
+
+The compiled kernel (seal.wasm) is the audited public build; its sha256 is pinned
+in kernel/kernel.js (KERNEL_WASM_SHA256) and checked on every `seal verify` run.
+All decision semantics live inside that compiled kernel. The kit adds only the
+Node runner, the receipt verifier, and the CLI.
