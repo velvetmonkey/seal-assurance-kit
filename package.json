@@ -2,11 +2,14 @@
   "name": "seal-assurance-kit",
   "version": "0.0.1",
   "description": "Assurance kit for MCP tool mediation: verify decision receipts, test boundary conformance, audit policy coverage.",
-  "bin": { "seal": "bin/seal" },
+  "bin": {
+    "seal": "bin/seal"
+  },
   "license": "Apache-2.0",
   "scripts": {
     "gen": "node src/gen-receipt.cjs",
     "verify": "node bin/seal verify fixtures/receipt-block.json && node bin/seal verify fixtures/receipt-allow.json",
-    "test": "node src/gen-receipt.cjs && npm run --silent verify"
+    "test": "node src/gen-receipt.cjs && npm run --silent verify && npm run --silent test:format",
+    "test:format": "node test/format-check.cjs"
   }
 }
