@@ -37,9 +37,11 @@ verification loudly rather than silently trusting a swapped binary.
 - A collision is a negative certificate: no monitor-based policy over those
   monitors can be correct on that sample.
 - Missing declared monitor evidence is malformed input and fails closed.
-- The JS command is the executable finite oracle. Its correctness warrant is the
-  Lean theorem `AttentionLean.WitnessTheory.witness_computable_iff_refines`, with
-  collisions characterized by `witness_separation_fails_of_char`.
+- The JS command is differentially checked against the Lean decision procedure
+  (`decide` of the witness-adequacy predicate, anchored by
+  `AttentionLean.WitnessTheory.witness_computable_iff_refines`) over corpus C via
+  `scripts/adequacy_bridge.mjs`. Collisions are characterized by
+  `witness_separation_fails_of_char`.
 
 ## `seal adequacy` does NOT claim
 

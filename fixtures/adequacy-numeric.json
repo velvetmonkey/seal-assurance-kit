@@ -1,0 +1,29 @@
+{
+  "monitors": ["score", "approval_count"],
+  "states": [
+    {
+      "id": "numeric-allow-a",
+      "label": 0,
+      "evidence": {
+        "score": 1,
+        "approval_count": 2
+      }
+    },
+    {
+      "id": "numeric-block",
+      "label": 1,
+      "evidence": {
+        "score": 9,
+        "approval_count": 0
+      }
+    },
+    {
+      "id": "numeric-allow-b",
+      "label": 0,
+      "evidence": {
+        "score": 1,
+        "approval_count": 2
+      }
+    }
+  ]
+}

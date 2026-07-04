@@ -12,6 +12,7 @@
     "test": "node src/gen-receipt.cjs && npm run --silent verify && npm run --silent test:bypass && npm run --silent test:format && npm run --silent test:adequacy",
     "test:format": "node test/format-check.cjs",
     "test:adequacy": "node test/adequacy-check.cjs",
+    "test:adequacy-bridge": "node scripts/adequacy_bridge.mjs",
     "test:bypass": "! node bin/seal verify fixtures/receipt-bypass.json"
   }
 }
