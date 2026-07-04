@@ -34,22 +34,34 @@ function check(name, got, want) {
   check("V3 live-demo arg-selected grant",
     F.capabilityTarget("db.execute", ["staging_deploy_audit", "insert"]).toString(), "11517196862591714860");
 
-  // --- kit-local convergence regression against the on-disk fixture ---------
+  // --- kit-local regressions against the on-disk v1 fixtures ----------------
   const fx = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "fixtures", "receipt-block.json"), "utf8"));
-  const call = fx.call || {};
-  check("fixture request_line == canonicalRequest(call.tool, call.args)",
-    fx.input.request_line, F.canonicalRequest(call.tool, call.args));
-  check("fixture canonical_request_sha256 == derived-from-call (§2 verifier obligation)",
-    fx.canonical_request_sha256, F.canonicalRequestSha256(call.tool, call.args));
-  check("fixture is legacy Schema K (validateReceipt must reject, version v0-check)",
-    JSON.stringify([F.validateReceipt(fx).ok, F.validateReceipt(fx).version]),
+  let v = F.validateReceipt(fx);
+  check("block fixture validates as v1", JSON.stringify([v.ok, v.version, v.errors]), JSON.stringify([true, "v1", []]));
+  check("block fixture canonical_request == derived line (§2)",
+    fx.canonical_request, F.canonicalRequest(fx.tool, fx.arguments));
+  check("block fixture canonical_request_sha256 == derived-from-call (§2 verifier obligation)",
+    fx.canonical_request_sha256, F.canonicalRequestSha256(fx.tool, fx.arguments));
+  check("block fixture hard split honored (no toolchain/axioms in kernel_identity)",
+    !("lean_toolchain" in fx.kernel_identity) && !("axioms" in fx.kernel_identity), true);
+
+  // legacy Schema K must still be rejected (embedded sample; the fixtures are v1 now)
+  const legacyK = { seal_check_receipt: "v0", input: { request_line: "x" }, witness: { certs: [] } };
+  check("legacy Schema K rejected (version v0-check)",
+    JSON.stringify([F.validateReceipt(legacyK).ok, F.validateReceipt(legacyK).version]),
     JSON.stringify([false, "v0-check"]));
 
-  // --- capability convention matches the kit's own fixture approvals --------
+  // --- capability convention matches the kit's own fixture grants -----------
   const allow = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "fixtures", "receipt-allow.json"), "utf8"));
-  check("allow-fixture approval == capabilityTarget convention",
-    (allow.call.approvals || [])[0],
+  check("allow-fixture opaque grant == capabilityTarget convention",
+    (allow.granted_capabilities || []).map((g) => g.target)[0],
     F.capabilityTarget("store.update", ["store"]).toString());
+
+  // --- cross-tool fixture (produced by seal-check) validates here too -------
+  const cross = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "fixtures", "receipt-crosstool.json"), "utf8"));
+  v = F.validateReceipt(cross);
+  check("cross-tool fixture (seal-check-produced) validates as v1",
+    JSON.stringify([v.ok, v.version]), JSON.stringify([true, "v1"]));
 
   console.log(failures === 0 ? "\nALL VECTORS PASS" : `\n${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);

@@ -8,8 +8,9 @@
   "license": "Apache-2.0",
   "scripts": {
     "gen": "node src/gen-receipt.cjs",
-    "verify": "node bin/seal verify fixtures/receipt-block.json && node bin/seal verify fixtures/receipt-allow.json",
-    "test": "node src/gen-receipt.cjs && npm run --silent verify && npm run --silent test:format",
-    "test:format": "node test/format-check.cjs"
+    "verify": "node bin/seal verify fixtures/receipt-block.json && node bin/seal verify fixtures/receipt-allow.json && node bin/seal verify fixtures/receipt-crosstool.json",
+    "test": "node src/gen-receipt.cjs && npm run --silent verify && npm run --silent test:bypass && npm run --silent test:format",
+    "test:format": "node test/format-check.cjs",
+    "test:bypass": "! node bin/seal verify fixtures/receipt-bypass.json"
   }
 }

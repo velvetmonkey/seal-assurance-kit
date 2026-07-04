@@ -1,0 +1,20 @@
+{
+  "seal_receipt": "v1",
+  "tool": "db.execute",
+  "arguments": {
+    "operation": "delete",
+    "table": "users",
+    "payload": "{}"
+  },
+  "canonical_request": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"db.execute\",\"arguments\":{\"operation\":\"delete\",\"table\":\"users\",\"payload\":\"{}\"}}}",
+  "canonical_request_sha256": "114021a0ac36fbd5890ee225158212f6d55456e1f39e34e0a7a8038e46792a93",
+  "bypass": true,
+  "verdict": "ALLOW",
+  "reason": "SEAL_DECISION_BYPASS=1 — seal removed from the path; no mediation performed",
+  "deny_kernel": null,
+  "kernel_identity": {
+    "wasm_sha256": null,
+    "self_verified": false,
+    "note": "seal bypassed; the verified kernel did not run."
+  }
+}

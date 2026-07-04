@@ -1,33 +1,35 @@
 {
-  "seal_check_receipt": "v0",
-  "input": {
-    "request_line": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"db.execute\",\"arguments\":{\"database\":\"prod\",\"sql\":\"drop table users\"}}}",
-    "now": 1000,
-    "approvals": []
+  "seal_receipt": "v1",
+  "tool": "db.execute",
+  "arguments": {
+    "database": "prod",
+    "sql": "drop table users"
   },
+  "now": 1000,
+  "canonical_request": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"db.execute\",\"arguments\":{\"database\":\"prod\",\"sql\":\"drop table users\"}}}",
+  "canonical_request_sha256": "460d746ba064ab9398885158dddfd6d32f1722b0efe0d3b6085c8441e9127793",
+  "bypass": false,
   "verdict": "BLOCK",
   "reason": "safety kernel: 7653913048106253087",
   "deny_kernel": "safety",
+  "certs": [
+    {
+      "kernel": "safety",
+      "verdict": "deny",
+      "reason": "7653913048106253087",
+      "certHash": "10880664185493056985"
+    },
+    {
+      "kernel": "temporal",
+      "verdict": "allow",
+      "reason": "trace ok (1 events)",
+      "certHash": "14726304512526927726"
+    }
+  ],
   "emitted_bytes": "{\"audit\":\"{\\\"certs\\\":[{\\\"certHash\\\":\\\"10880664185493056985\\\",\\\"kernel\\\":\\\"safety\\\",\\\"reason\\\":\\\"7653913048106253087\\\",\\\"verdict\\\":\\\"deny\\\"},{\\\"certHash\\\":\\\"14726304512526927726\\\",\\\"kernel\\\":\\\"temporal\\\",\\\"reason\\\":\\\"trace ok (1 events)\\\",\\\"verdict\\\":\\\"allow\\\"}],\\\"epoch\\\":1,\\\"tool\\\":\\\"db.execute\\\",\\\"verdict\\\":\\\"deny\\\"}\",\"response\":\"{\\\"id\\\":1,\\\"jsonrpc\\\":\\\"2.0\\\",\\\"result\\\":{\\\"content\\\":[{\\\"text\\\":\\\"approval required: 7653913048106253087\\\",\\\"type\\\":\\\"text\\\"}],\\\"isError\\\":true}}\\n\",\"route\":\"block\"}",
-  "witness": {
-    "certs": [
-      {
-        "kernel": "safety",
-        "verdict": "deny",
-        "reason": "7653913048106253087",
-        "certHash": "10880664185493056985"
-      },
-      {
-        "kernel": "temporal",
-        "verdict": "allow",
-        "reason": "trace ok (1 events)",
-        "certHash": "14726304512526927726"
-      }
-    ]
-  },
   "kernel_identity": {
     "wasm_sha256": "1cc765c7de2cead88eda2e8e5f5af5a5e070f35a767916e754b873733562c70a",
-    "self_verified_in_browser": true,
+    "self_verified": true,
     "note": "Binary identity of the evaluator actually executed. Hashed in your browser from the loaded bytes and compared to a pinned constant. This is the ONLY thing verified here."
   },
   "asserted_provenance": {
@@ -156,13 +158,5 @@
       ]
     }
   },
-  "call": {
-    "tool": "db.execute",
-    "args": {
-      "database": "prod",
-      "sql": "drop table users"
-    },
-    "approvals": []
-  },
-  "canonical_request_sha256": "460d746ba064ab9398885158dddfd6d32f1722b0efe0d3b6085c8441e9127793"
+  "granted_capabilities": []
 }

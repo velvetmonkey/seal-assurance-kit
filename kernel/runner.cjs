@@ -30,7 +30,9 @@ function kernelSha() {
   return crypto.createHash("sha256").update(bytes).digest("hex");
 }
 
-// One self-contained decision. Returns { raw, verdict, receipt }.
+// One self-contained decision. Returns { raw, verdict, receipt } — receipt
+// is schema v1 (seal-host/docs/DECISION-RECEIPT-SCHEMA.md) via the vendored
+// kernel.js buildReceipt.
 async function decide(config, { tool, args = {}, approvals = [], now = 1000 }) {
   const { M, cfg, K } = await load();
   const ir = JSON.parse(M.ccall("seal_init", "string", ["string", "string"],
@@ -39,11 +41,11 @@ async function decide(config, { tool, args = {}, approvals = [], now = 1000 }) {
   const step = cfg.buildStepInput({ tool, args, approvals, now });
   const raw = M.ccall("seal_decide", "string", ["string"], [step]);
   const parsed = cfg.parseVerdict(raw, tool);
-  const s = JSON.parse(step);
-  const input = { request_line: s.line, now: s.now, approvals: approvals.map(String) };
   const computed = kernelSha();
   const sha = { computed, pinned: K.KERNEL_WASM_SHA256, match: computed === K.KERNEL_WASM_SHA256 };
-  const base = JSON.parse(K.canonicalReceiptJson(K.buildReceipt({ input, parsed, raw, sha })));
+  const base = JSON.parse(K.canonicalReceiptJson(K.buildReceipt({
+    call: { tool, args, approvals, now }, config, parsed, raw, sha,
+  })));
   return { raw, verdict: base.verdict, receipt: base };
 }
 

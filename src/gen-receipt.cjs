@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Generate gold decision receipts for `seal verify` fixtures/tests.
-// A kit receipt = the seal-check canonical receipt AUGMENTED with the policy
-// (kernel_config), the call, and the canonical request hash — everything an
-// independent verifier needs to re-derive the decision without trusting the issuer.
+// Receipts are schema v1 (seal-host/docs/DECISION-RECEIPT-SCHEMA.md): the
+// vendored kernel.js buildReceipt already carries the policy (kernel_config),
+// the call as tool/arguments/now/granted_capabilities, and the canonical
+// request hash — everything an independent verifier needs to re-derive the
+// decision without trusting the issuer. No augmentation needed here.
 const path = require("path");
 const fs = require("fs");
-const crypto = require("crypto");
 const { decide } = require("../kernel/runner.cjs");
 
 const bigintSafe = (_k, v) => (typeof v === "bigint" ? v.toString() : v);
@@ -14,10 +15,6 @@ async function makeReceipt(config, call) {
   // approvals may be BigInt hashes; normalize to strings (the kernel maps String anyway)
   call = { ...call, approvals: (call.approvals || []).map(String) };
   const { receipt } = await decide(config, call);
-  receipt.kernel_config = config;
-  receipt.call = call;
-  receipt.canonical_request_sha256 =
-    crypto.createHash("sha256").update(receipt.input.request_line).digest("hex");
   return receipt;
 }
 
