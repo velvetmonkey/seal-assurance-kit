@@ -1,0 +1,20 @@
+{
+  "monitors": ["risk_score", "has_approval"],
+  "states": [
+    {
+      "id": "complete",
+      "label": "allow",
+      "evidence": {
+        "risk_score": "low",
+        "has_approval": true
+      }
+    },
+    {
+      "id": "missing",
+      "label": "block",
+      "evidence": {
+        "risk_score": "high"
+      }
+    }
+  ]
+}

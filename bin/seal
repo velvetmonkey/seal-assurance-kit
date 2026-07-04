@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
-// seal assurance kit CLI. One binary, three commands: verify | test | scan.
+// seal assurance kit CLI. One binary, four commands: verify | test | scan | adequacy.
 const path = require("path");
 
 async function main() {
@@ -30,6 +30,22 @@ async function main() {
     if (!t || !p) { console.error("usage: seal scan <tools.json> <policy.json>"); process.exit(2); }
     process.exit(scan(path.resolve(t), path.resolve(p)) ? 0 : 1);
   }
+  if (cmd === "adequacy") {
+    const sub = process.argv[3];
+    const f = process.argv[4];
+    if (sub === "check") {
+      if (!f) { console.error("usage: seal adequacy check <labels.json>"); process.exit(2); }
+      const { check } = require(path.join(__dirname, "../src/adequacy.cjs"));
+      process.exit(check(path.resolve(f)) ? 0 : 1);
+    }
+    if (sub === "find-collision") {
+      if (!f) { console.error("usage: seal adequacy find-collision <labels.json>"); process.exit(2); }
+      const { findCollision } = require(path.join(__dirname, "../src/adequacy.cjs"));
+      process.exit(findCollision(path.resolve(f)) ? 0 : 1);
+    }
+    console.error("usage: seal adequacy check <labels.json> | seal adequacy find-collision <labels.json>");
+    process.exit(2);
+  }
   console.log([
     "seal assurance kit",
     "",
@@ -37,6 +53,8 @@ async function main() {
     "  seal test   [--profile L0]    MCP boundary conformance oracle",
     "  seal scan   <tools> <policy>  MCP policy coverage auditor",
     "  seal scan diff <old> <new> <policy>   what changed since last scan",
+    "  seal adequacy check <labels>          finite monitor-resolution adequacy",
+    "  seal adequacy find-collision <labels> find a semantic monitor collision",
   ].join("\n"));
   process.exit(cmd ? 2 : 0);
 }

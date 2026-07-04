@@ -1,0 +1,19 @@
+{
+  "monitors": ["risk_score"],
+  "states": [
+    {
+      "id": "lookup-a",
+      "label": "allow",
+      "evidence": {
+        "risk_score": "low"
+      }
+    },
+    {
+      "id": "lookup-b",
+      "label": "allow",
+      "evidence": {
+        "risk_score": "medium"
+      }
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "monitors": ["risk_score", "has_approval"],
+  "states": [
+    {
+      "id": "safe-approved",
+      "label": "allow",
+      "trace_kind": "approved low-risk change",
+      "evidence": {
+        "risk_score": "low",
+        "has_approval": true
+      }
+    },
+    {
+      "id": "risky-unapproved",
+      "label": "block",
+      "trace_kind": "unapproved high-risk change",
+      "evidence": {
+        "risk_score": "high",
+        "has_approval": false
+      }
+    },
+    {
+      "id": "safe-read",
+      "label": "allow",
+      "trace_kind": "read-only lookup",
+      "evidence": {
+        "risk_score": "low",
+        "has_approval": true
+      }
+    }
+  ]
+}

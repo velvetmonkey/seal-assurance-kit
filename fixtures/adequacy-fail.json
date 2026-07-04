@@ -1,0 +1,35 @@
+{
+  "monitors": ["risk_score", "has_approval"],
+  "states": [
+    {
+      "id": "deploy-staging",
+      "label": "allow",
+      "operation": "deploy",
+      "environment": "staging",
+      "evidence": {
+        "risk_score": "medium",
+        "has_approval": true
+      }
+    },
+    {
+      "id": "deploy-prod",
+      "label": "block",
+      "operation": "deploy",
+      "environment": "prod",
+      "evidence": {
+        "risk_score": "medium",
+        "has_approval": true
+      }
+    },
+    {
+      "id": "delete-prod",
+      "label": "block",
+      "operation": "delete",
+      "environment": "prod",
+      "evidence": {
+        "risk_score": "high",
+        "has_approval": false
+      }
+    }
+  ]
+}
