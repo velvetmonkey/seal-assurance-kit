@@ -1,5 +1,9 @@
 # seal assurance kit
 
+![License](https://img.shields.io/badge/license-Apache--2.0-blue)
+![Interface](https://img.shields.io/badge/interface-CLI-black)
+![Domain](https://img.shields.io/badge/domain-MCP%20mediation-informational)
+
 Small, boring, enterprise-friendly tooling for **MCP tool mediation**. One CLI, four
 commands, PASS/FAIL/WARN output a stranger can run against their own boundary.
 
