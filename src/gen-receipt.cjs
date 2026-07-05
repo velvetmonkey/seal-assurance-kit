@@ -9,10 +9,8 @@ const path = require("path");
 const fs = require("fs");
 const { decide } = require("../kernel/runner.cjs");
 
-const bigintSafe = (_k, v) => (typeof v === "bigint" ? v.toString() : v);
-
 async function makeReceipt(config, call) {
-  // approvals may be BigInt hashes; normalize to strings (the kernel maps String anyway)
+  // Approval targets are lowercase 64-hex strings; normalize defensively for callers.
   call = { ...call, approvals: (call.approvals || []).map(String) };
   const { receipt } = await decide(config, call);
   return receipt;
@@ -26,8 +24,8 @@ async function makeReceipt(config, call) {
   const allow = await makeReceipt(cfg.CFG_STANDARD,
     { tool: "store.update", args: { op: "orset.add", key: "k1" },
       approvals: [cfg.stableHash(["store.update", "store"])] });
-  fs.writeFileSync(path.join(outDir, "receipt-block.json"), JSON.stringify(block, bigintSafe, 2) + "\n");
-  fs.writeFileSync(path.join(outDir, "receipt-allow.json"), JSON.stringify(allow, bigintSafe, 2) + "\n");
+  fs.writeFileSync(path.join(outDir, "receipt-block.json"), JSON.stringify(block, null, 2) + "\n");
+  fs.writeFileSync(path.join(outDir, "receipt-allow.json"), JSON.stringify(allow, null, 2) + "\n");
   console.log(`wrote fixtures: block=${block.verdict}  allow=${allow.verdict}`);
   process.exit(0);
 })().catch((e) => { console.error("ERR", e.message); process.exit(1); });

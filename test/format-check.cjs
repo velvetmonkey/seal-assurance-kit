@@ -30,9 +30,9 @@ function check(name, got, want) {
   check("V4 canonical_request_sha256 (kit block fixture pre-image)",
     F.canonicalRequestSha256("db.execute", { database: "prod", sql: "drop table users" }),
     "460d746ba064ab9398885158dddfd6d32f1722b0efe0d3b6085c8441e9127793");
-  check("V2 store.update literal grant", F.capabilityTarget("store.update", ["store"]).toString(), "11662918066780758608");
+  check("V2 store.update literal grant", F.capabilityTarget("store.update", ["store"]), "6bff1759cf3c00f781f0b15d428f4cf84e59f8b10be48dd4dd742175a3e6f984");
   check("V3 live-demo arg-selected grant",
-    F.capabilityTarget("db.execute", ["staging_deploy_audit", "insert"]).toString(), "11517196862591714860");
+    F.capabilityTarget("db.execute", ["staging_deploy_audit", "insert"]), "351f47a44bcf935c7242432e24bd11db1536d7c1da873f0ca953c8b80ae02433");
 
   // --- kit-local regressions against the on-disk v1 fixtures ----------------
   const fx = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "fixtures", "receipt-block.json"), "utf8"));
@@ -55,7 +55,7 @@ function check(name, got, want) {
   const allow = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "fixtures", "receipt-allow.json"), "utf8"));
   check("allow-fixture opaque grant == capabilityTarget convention",
     (allow.granted_capabilities || []).map((g) => g.target)[0],
-    F.capabilityTarget("store.update", ["store"]).toString());
+    F.capabilityTarget("store.update", ["store"]));
 
   // --- cross-tool fixture (produced by seal-check) validates here too -------
   const cross = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "fixtures", "receipt-crosstool.json"), "utf8"));
