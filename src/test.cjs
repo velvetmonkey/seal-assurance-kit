@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// `seal test --profile L0` — MCP boundary conformance oracle.
+// `seal test --profile L0`: reference-kernel conformance oracle.
 //
 // Runs the published L0 conformance corpus (named bypass / parser-differential /
 // stale-capability attack traces) through the boundary and asserts each is
@@ -23,7 +23,8 @@ async function runCase(c) {
 
 async function test(profile = "L0") {
   const { CORPUS } = await import("file://" + path.resolve(__dirname, "../kernel/corpus.js"));
-  console.log(`seal test  profile=${profile}  cases=${CORPUS.length}`);
+  console.log(`seal test  reference-kernel conformance  profile=${profile}  cases=${CORPUS.length}`);
+  console.log(`  (self-conformance vs the vendored reference kernel; not a live-endpoint boundary test)`);
   let allGood = true;
   for (const c of CORPUS) {
     const a = await runCase(c);
@@ -36,7 +37,7 @@ async function test(profile = "L0") {
     const note = blocked ? `blocked by ${a.deny || "?"}` : `NOT BLOCKED (${a.verdict})`;
     console.log(`  ${pass ? "PASS" : "FAIL"}  ${c.lens.padEnd(22)} ${c.id.padEnd(20)} ${note}${deterministic ? "" : "  [NON-DETERMINISTIC]"}`);
   }
-  console.log(`  ${allGood ? "CONFORMANT" : "NON-CONFORMANT"}  (${CORPUS.length}/${CORPUS.length} traces, all four gates + deny-rule)`);
+  console.log(`  ${allGood ? "CONFORMANT (reference kernel)" : "NON-CONFORMANT"}  (${CORPUS.length}/${CORPUS.length} traces, all four gates + deny-rule)`);
   return allGood;
 }
 
