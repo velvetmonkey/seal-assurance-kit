@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "description": "Assurance kit for MCP tool mediation: verify decision receipts, test boundary conformance, audit policy coverage, and check finite monitor adequacy.",
   "bin": {
+    "seal-assure": "bin/seal",
     "seal": "bin/seal"
   },
   "license": "Apache-2.0",
