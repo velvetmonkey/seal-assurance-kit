@@ -99,7 +99,7 @@ function check(name, got, want) {
   // --- cross-tool fixture (produced by seal-check) validates here too -------
   const cross = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "fixtures", "receipt-crosstool.json"), "utf8"));
   v = F.validateReceipt(cross);
-  check("cross-tool fixture (seal-check-produced) validates as v1",
+  check("cross-tool fixture (seal-check-produced) validates as v2",
     JSON.stringify([v.ok, v.version]), JSON.stringify([true, "v2"]));
 
   console.log(failures === 0 ? "\nALL VECTORS PASS" : `\n${failures} FAILURE(S)`);
