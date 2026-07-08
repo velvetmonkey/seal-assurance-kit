@@ -37,7 +37,7 @@ async function test(profile = "L0") {
     const note = blocked ? `blocked by ${a.deny || "?"}` : `NOT BLOCKED (${a.verdict})`;
     console.log(`  ${pass ? "PASS" : "FAIL"}  ${c.lens.padEnd(22)} ${c.id.padEnd(20)} ${note}${deterministic ? "" : "  [NON-DETERMINISTIC]"}`);
   }
-  console.log(`  ${allGood ? "CONFORMANT (reference kernel)" : "NON-CONFORMANT"}  (${CORPUS.length}/${CORPUS.length} traces, all four gates + deny-rule)`);
+  console.log(`  ${allGood ? "PASS  CONFORMANT (reference kernel)" : "FAIL  NON-CONFORMANT"}  (${CORPUS.length}/${CORPUS.length} traces, all four gates + deny-rule)`);
   return allGood;
 }
 

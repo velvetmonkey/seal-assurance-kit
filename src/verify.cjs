@@ -82,7 +82,7 @@ function report(checks, receipt, receiptPath, { notMediated = false } = {}) {
   for (const c of checks) {
     console.log(`  ${c.pass ? "PASS" : "FAIL"}  ${c.name}${c.detail ? "   (" + c.detail + ")" : ""}`);
   }
-  console.log(`  ${notMediated ? "NOT MEDIATED (bypass receipt)" : allGood ? "VERIFIED" : "NOT VERIFIED"}`);
+  console.log(`  ${notMediated ? "FAIL  NOT MEDIATED (bypass receipt)" : allGood ? "PASS  VERIFIED" : "FAIL  NOT VERIFIED"}`);
   return allGood;
 }
 

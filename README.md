@@ -42,7 +42,7 @@ Mandatory non-claims:
 
 ```sh
 npm test                                          # full suite; leaves the working tree untouched
-node bin/seal verify fixtures/receipt-block.json  # exit 0: VERIFIED
+node bin/seal verify fixtures/receipt-block.json  # exit 0: PASS VERIFIED
 node bin/seal scan fixtures/tools.json fixtures/policy.json
 # ^ expected output: FAIL, exit 1. The sample policy deliberately leaves three
 #   mutating tools uncovered (file.write, http.post, jira.deleteIssue) — scan
