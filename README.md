@@ -82,6 +82,7 @@ _All Seal-family repositories are currently private; these links resolve only fo
 
 ## Documentation
 
+- [What Seal is NOT](docs/WHAT-SEAL-IS-NOT.md) — read this first
 - [Architecture](docs/ARCHITECTURE.md)
 - [Input schemas: policy / tools / labels](docs/SCHEMAS.md)
 - [Threat model](docs/THREAT-MODEL.md)
