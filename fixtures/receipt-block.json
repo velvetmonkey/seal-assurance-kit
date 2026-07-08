@@ -1,10 +1,11 @@
 {
-  "seal_receipt": "v1",
+  "seal_receipt": "v2",
   "tool": "db.execute",
   "arguments": {
     "database": "prod",
     "sql": "drop table users"
   },
+  "args_hash": "46657b69f15f78859ead6dd0d416cbfc9809922757ba90aa16a56b7d73afafc8",
   "now": 1000,
   "canonical_request": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"db.execute\",\"arguments\":{\"database\":\"prod\",\"sql\":\"drop table users\"}}}",
   "canonical_request_sha256": "460d746ba064ab9398885158dddfd6d32f1722b0efe0d3b6085c8441e9127793",

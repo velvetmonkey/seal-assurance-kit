@@ -76,7 +76,7 @@ function check(name, got, want) {
   // --- kit-local regressions against the on-disk v1 fixtures ----------------
   const fx = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "fixtures", "receipt-block.json"), "utf8"));
   let v = F.validateReceipt(fx);
-  check("block fixture validates as v1", JSON.stringify([v.ok, v.version, v.errors]), JSON.stringify([true, "v1", []]));
+  check("block fixture validates as v2", JSON.stringify([v.ok, v.version, v.errors]), JSON.stringify([true, "v2", []]));
   check("block fixture canonical_request == derived line (§2)",
     fx.canonical_request, F.canonicalRequest(fx.tool, fx.arguments));
   check("block fixture canonical_request_sha256 == derived-from-call (§2 verifier obligation)",
@@ -100,7 +100,7 @@ function check(name, got, want) {
   const cross = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "fixtures", "receipt-crosstool.json"), "utf8"));
   v = F.validateReceipt(cross);
   check("cross-tool fixture (seal-check-produced) validates as v1",
-    JSON.stringify([v.ok, v.version]), JSON.stringify([true, "v1"]));
+    JSON.stringify([v.ok, v.version]), JSON.stringify([true, "v2"]));
 
   console.log(failures === 0 ? "\nALL VECTORS PASS" : `\n${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);
