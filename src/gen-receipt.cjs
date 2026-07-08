@@ -18,7 +18,10 @@ async function makeReceipt(config, call) {
 
 (async () => {
   const cfg = await import("file://" + path.resolve(__dirname, "../kernel/seal-config.js"));
-  const outDir = path.resolve(__dirname, "../fixtures");
+  // Default: the committed fixtures. Pass a directory argument to generate
+  // elsewhere (the non-mutating drift test generates into a temp dir).
+  const outDir = process.argv[2] ? path.resolve(process.argv[2]) : path.resolve(__dirname, "../fixtures");
+  fs.mkdirSync(outDir, { recursive: true });
   const block = await makeReceipt(cfg.CFG_STANDARD,
     { tool: "db.execute", args: { database: "prod", sql: "drop table users" }, approvals: [] });
   const allow = await makeReceipt(cfg.CFG_STANDARD,

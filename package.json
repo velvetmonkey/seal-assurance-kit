@@ -10,7 +10,8 @@
   "scripts": {
     "gen": "node src/gen-receipt.cjs",
     "verify": "node bin/seal verify fixtures/receipt-block.json && node bin/seal verify fixtures/receipt-allow.json && node bin/seal verify fixtures/receipt-crosstool.json",
-    "test": "node src/gen-receipt.cjs && npm run --silent verify && npm run --silent test:bypass && npm run --silent test:format && npm run --silent test:adequacy",
+    "test": "npm run --silent verify && npm run --silent test:drift && npm run --silent test:bypass && npm run --silent test:format && npm run --silent test:adequacy",
+    "test:drift": "node test/fixture-drift.cjs",
     "test:format": "node test/format-check.cjs",
     "test:adequacy": "node test/adequacy-check.cjs",
     "test:adequacy-bridge": "node scripts/adequacy_bridge.mjs",

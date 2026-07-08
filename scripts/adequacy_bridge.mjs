@@ -12,7 +12,12 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const ATTENTION_LEAN_ROOT = process.env.ATTENTION_LEAN_ROOT || "/home/monkey/src/attention-lean";
+const ATTENTION_LEAN_ROOT = process.env.ATTENTION_LEAN_ROOT;
+if (!ATTENTION_LEAN_ROOT) {
+  console.error("set ATTENTION_LEAN_ROOT to your attention-lean checkout (it must build `lake exe adequacy_oracle`)");
+  console.error("example: ATTENTION_LEAN_ROOT=~/src/attention-lean npm run test:adequacy-bridge");
+  process.exit(2);
+}
 const FIXTURES = [
   "fixtures/adequacy-pass.json",
   "fixtures/adequacy-vacuous.json",

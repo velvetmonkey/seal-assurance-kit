@@ -9,7 +9,7 @@ CLI tools for checking Seal receipts, MCP mediation coverage, conformance traces
 > **Runtime profile: `compatible`.** Strict `canonical-l0` is proved and modelled, not the deployed route yet.
 > **Claim:** policy-covered request-effects recognised by the compatible MCP boundary require a matching live human approval and an allowing Lean kernel verdict; seam failures block; every decision emits replayable evidence.
 > **Non-claim:** the deployed host is not proved end to end, and canonical parser rejection is not currently the runtime gate. Host `ApprovalRecord` tokens are a separate signed channel from the v2 canonical approval tuple, and the live demo still emits legacy v0 receipts.
-> Map: [EVALUATOR-START.md](https://github.com/velvetmonkey/seal/blob/main/EVALUATOR-START.md) · profile detail: [PROFILE.md](https://github.com/velvetmonkey/seal-host/blob/main/PROFILE.md).
+> Map: [EVALUATOR-START.md](https://github.com/velvetmonkey/seal/blob/main/EVALUATOR-START.md) · profile detail: [PROFILE.md](https://github.com/velvetmonkey/seal-host/blob/main/PROFILE.md) — both in private repos; the links resolve only for authorised evaluators.
 
 **Seal is a proven checkpoint for AI agents.** When an AI agent tries to use a real tool over MCP (send money, delete a record, call an external service), Seal stands in the way and asks one question: did a human explicitly approve *this exact request*? No matching approval, no action. Every decision is written into a tamper-evident record you can check yourself. What makes Seal different from other guardrails: the core mediation rules aren't just tested, they're machine-checked theorems in Lean 4. The same decision logic then runs byte-for-byte in the Rust host you deploy, in the browser, and in the checker, each verified against that one proven rulebook.
 
@@ -41,13 +41,33 @@ Mandatory non-claims:
 ## Verify in five minutes
 
 ```sh
-npm test
-node bin/seal verify fixtures/receipt-block.json
+npm test                                          # full suite; leaves the working tree untouched
+node bin/seal verify fixtures/receipt-block.json  # exit 0: VERIFIED
 node bin/seal scan fixtures/tools.json fixtures/policy.json
+# ^ expected output: FAIL, exit 1. The sample policy deliberately leaves three
+#   mutating tools uncovered (file.write, http.post, jira.deleteIssue) — scan
+#   exists to catch exactly this. A fully covered catalogue exits 0.
 node bin/seal adequacy check fixtures/adequacy-pass.json
 ```
 
+Input formats for `scan` and `adequacy` (policy / tools / labels JSON) are
+documented with annotated examples in [docs/SCHEMAS.md](docs/SCHEMAS.md).
+
+## Exit codes
+
+| code | meaning |
+|---|---|
+| 0 | check passed (also help / `--version`) |
+| 1 | check ran and **failed**: NOT VERIFIED, scan FAIL (uncovered tools), NON-CONFORMANT, adequacy collision |
+| 2 | usage error: unknown command, flag, or profile; missing argument |
+| 3 | internal error (unexpected exception — not a verdict) |
+
+A `seal scan` exit 1 on a deliberately incomplete policy is the auditor doing
+its job; wire it into CI so new uncovered tools fail the build.
+
 ## The Seal family
+
+_All Seal-family repositories are currently private; these links resolve only for authorised evaluators._
 
 - [seal](https://github.com/velvetmonkey/seal): the private umbrella story, product map, and evaluator path.
 - [mcp-seal-dev](https://github.com/velvetmonkey/mcp-seal-dev): The rulebook, proven.
@@ -59,6 +79,7 @@ node bin/seal adequacy check fixtures/adequacy-pass.json
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Input schemas: policy / tools / labels](docs/SCHEMAS.md)
 - [Threat model](docs/THREAT-MODEL.md)
 - [Assumptions](docs/ASSUMPTIONS.md)
 - [Proof reference](docs/PROOF-REFERENCE.md)

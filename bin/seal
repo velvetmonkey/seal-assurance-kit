@@ -1,20 +1,74 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
 // seal assurance kit CLI. One binary, four commands: verify | test | scan | adequacy.
+//
+// Exit codes (also in README "Exit codes"):
+//   0  check passed (or help / version)
+//   1  check ran and FAILED (NOT VERIFIED, FAIL, NON-CONFORMANT, collisions found)
+//   2  usage error (unknown command / flag / profile, missing argument)
+//   3  internal error (unexpected exception — not a verdict)
 const path = require("path");
+
+const KNOWN_PROFILES = ["L0"];
+
+const HELP = [
+  "seal assurance kit",
+  "",
+  "  seal verify <receipt.json>    verify a decision receipt (re-derive, trust nothing)",
+  "  seal test   [--profile L0]    MCP boundary conformance oracle",
+  "  seal scan   <tools> <policy>  MCP policy coverage auditor",
+  "                                (FAIL + exit 1 = uncovered mutating tools found;",
+  "                                 that is scan doing its job, not the kit breaking)",
+  "  seal scan diff <old> <new> <policy>   what changed since last scan",
+  "  seal adequacy check <labels>          finite monitor-resolution adequacy",
+  "  seal adequacy find-collision <labels> find a semantic monitor collision",
+  "",
+  "  --help, -h      this help",
+  "  --version, -V   print the kit version",
+  "",
+  "  input formats: docs/SCHEMAS.md",
+  "  exit codes: 0 pass · 1 check failed · 2 usage error · 3 internal error",
+].join("\n");
+
+function usageError(msg) {
+  console.error(msg);
+  console.error("run `seal --help` for usage");
+  process.exit(2);
+}
 
 async function main() {
   const cmd = process.argv[2];
+  if (!cmd || cmd === "--help" || cmd === "-h" || cmd === "help") {
+    console.log(HELP);
+    process.exit(0);
+  }
+  if (cmd === "--version" || cmd === "-V") {
+    console.log(require(path.join(__dirname, "../package.json")).version);
+    process.exit(0);
+  }
   if (cmd === "verify") {
     const f = process.argv[3];
-    if (!f) { console.error("usage: seal verify <receipt.json>"); process.exit(2); }
+    if (!f) usageError("usage: seal verify <receipt.json>");
     const { verify } = require(path.join(__dirname, "../src/verify.cjs"));
     const ok = await verify(path.resolve(f));
     process.exit(ok ? 0 : 1);
   }
   if (cmd === "test") {
-    const arg = process.argv[3] || "";
-    const profile = arg.startsWith("--profile") ? (process.argv[4] || "L0") : "L0";
+    let profile = "L0";
+    const arg = process.argv[3];
+    if (arg !== undefined) {
+      if (arg === "--profile") {
+        profile = process.argv[4];
+        if (!profile) usageError("usage: seal test [--profile L0]");
+      } else if (arg.startsWith("--profile=")) {
+        profile = arg.slice("--profile=".length);
+      } else {
+        usageError(`unknown argument: ${arg}`);
+      }
+      if (!KNOWN_PROFILES.includes(profile)) {
+        usageError(`unknown profile: ${JSON.stringify(profile)} (known: ${KNOWN_PROFILES.join(", ")})`);
+      }
+    }
     const { test } = require(path.join(__dirname, "../src/test.cjs"));
     const ok = await test(profile);
     process.exit(ok ? 0 : 1);
@@ -23,40 +77,29 @@ async function main() {
     const { scan, diff } = require(path.join(__dirname, "../src/scan.cjs"));
     if (process.argv[3] === "diff") {
       const [o, n, p] = process.argv.slice(4);
-      if (!o || !n || !p) { console.error("usage: seal scan diff <old-tools.json> <new-tools.json> <policy.json>"); process.exit(2); }
+      if (!o || !n || !p) usageError("usage: seal scan diff <old-tools.json> <new-tools.json> <policy.json>");
       process.exit(diff(path.resolve(o), path.resolve(n), path.resolve(p)) ? 0 : 1);
     }
     const [t, p] = process.argv.slice(3);
-    if (!t || !p) { console.error("usage: seal scan <tools.json> <policy.json>"); process.exit(2); }
+    if (!t || !p) usageError("usage: seal scan <tools.json> <policy.json>");
     process.exit(scan(path.resolve(t), path.resolve(p)) ? 0 : 1);
   }
   if (cmd === "adequacy") {
     const sub = process.argv[3];
     const f = process.argv[4];
     if (sub === "check") {
-      if (!f) { console.error("usage: seal adequacy check <labels.json>"); process.exit(2); }
+      if (!f) usageError("usage: seal adequacy check <labels.json>");
       const { check } = require(path.join(__dirname, "../src/adequacy.cjs"));
       process.exit(check(path.resolve(f)) ? 0 : 1);
     }
     if (sub === "find-collision") {
-      if (!f) { console.error("usage: seal adequacy find-collision <labels.json>"); process.exit(2); }
+      if (!f) usageError("usage: seal adequacy find-collision <labels.json>");
       const { findCollision } = require(path.join(__dirname, "../src/adequacy.cjs"));
       process.exit(findCollision(path.resolve(f)) ? 0 : 1);
     }
-    console.error("usage: seal adequacy check <labels.json> | seal adequacy find-collision <labels.json>");
-    process.exit(2);
+    usageError("usage: seal adequacy check <labels.json> | seal adequacy find-collision <labels.json>");
   }
-  console.log([
-    "seal assurance kit",
-    "",
-    "  seal verify <receipt.json>    verify a decision receipt (re-derive, trust nothing)",
-    "  seal test   [--profile L0]    MCP boundary conformance oracle",
-    "  seal scan   <tools> <policy>  MCP policy coverage auditor",
-    "  seal scan diff <old> <new> <policy>   what changed since last scan",
-    "  seal adequacy check <labels>          finite monitor-resolution adequacy",
-    "  seal adequacy find-collision <labels> find a semantic monitor collision",
-  ].join("\n"));
-  process.exit(cmd ? 2 : 0);
+  usageError(`unknown command: ${cmd}`);
 }
 
-main().catch((e) => { console.error("ERR", e.message); process.exit(1); });
+main().catch((e) => { console.error("ERR", e.message); process.exit(3); });
