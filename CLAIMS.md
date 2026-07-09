@@ -42,6 +42,13 @@ verification loudly rather than silently trusting a swapped binary.
   `AttentionLean.WitnessTheory.witness_computable_iff_refines`) over corpus C via
   `scripts/adequacy_bridge.mjs`. Collisions are characterized by
   `witness_separation_fails_of_char`.
+- The same refinement question, asked of receipt/approval FIELD SETS ("do these
+  fields carry enough information to identify the exact effect?"), is exercised
+  by the private sufficiency analyzer `witness-check` (internal repo,
+  `velvetmonkey/witness-check`): it found the concrete collision proving the
+  pre-v2 approval surface insufficient, and that receipt-schema-v2's
+  `args_hash` closes it. Internal tooling; referenced publicly by capability
+  only.
 
 ## `seal adequacy` does NOT claim
 
