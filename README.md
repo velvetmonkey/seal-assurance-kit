@@ -83,6 +83,10 @@ sufficiency analysis proved necessary.
 | What changed between two receipts — does it touch what is **authorized**? | `seal receipt-diff` (this kit) |
 | Gate receipts in CI | `seal-verify-action` — runs `seal verify` in GitHub Actions and fails the build on an unverifiable receipt (the sufficiency and diff checks are local tools today) |
 
+One concept, two surfaces: this kit's `seal adequacy` command answers the same **sufficiency**
+question witness-check analyses, over a finite sample at the CLI. Do not read them as two
+different ideas.
+
 `receipt-diff` does **not** re-run the kernel, and a clean diff is not a verification of either
 receipt. `--json` for machine output. Deterministic: same inputs, same bytes. It may graduate to
 a standalone repo later; the implementation lives in `src/receipt-diff.cjs` either way.
