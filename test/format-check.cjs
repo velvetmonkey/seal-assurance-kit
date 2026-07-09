@@ -34,10 +34,49 @@ function check(name, got, want) {
   check("V3 live-demo arg-selected grant",
     F.capabilityTarget("db.execute", ["staging_deploy_audit", "insert"]), "351f47a44bcf935c7242432e24bd11db1536d7c1da873f0ca953c8b80ae02433");
 
+  // --- §11.3 v2 derived-hash vectors (V5-V7) --------------------------------
+  check("V5 args_hash (§2 V4 args)",
+    F.canonicalJsonSha256({ database: "prod", sql: "drop table users" }),
+    "46657b69f15f78859ead6dd0d416cbfc9809922757ba90aa16a56b7d73afafc8");
+  check("V6 args_hash (§2 V1 args)",
+    F.canonicalJsonSha256({ operation: "insert", table: "staging_deploy_audit",
+      payload: "{\"deploy_ref\":\"deploy-2026-06-30\"}" }),
+    "53ae7fa46f79dd2637b3d5af5a160834b755d0a00a66fec11cb313db8bca753c");
+  const PAYCFG = { epoch: 1, safety: { approval: { ttl_seconds: 120 }, tools: [
+    { name: "payments.send", mode: "guarded",
+      payment: { class: "payment", bind: { amount: "amount", merchant: "to", currency: "currency" } },
+      target: [{ literal: "pay" }, { arg: "to" }, { arg: "amount" }] },
+  ] } };
+  check("V7 policy_hash (§11.4 example config)",
+    F.canonicalJsonSha256(PAYCFG),
+    "436c50ce0860d500c188e7e7c8133eed1e41e626b01174727159f3f664e84407");
+
+  // --- §11.5 v2 assembly + roundtrip through the vendored copy ---------------
+  const payArgs = { amount: 40000, to: "supplier-77", currency: "GBP" };
+  const v2r = F.assembleReceiptV2({
+    tool: "payments.send", arguments: payArgs, now: 1000,
+    canonical_request_sha256: F.canonicalRequestSha256("payments.send", payArgs),
+    bypass: false, verdict: "ALLOW", reason: "ok", deny_kernel: null,
+    amount: 40000, merchant: "supplier-77", currency: "GBP",
+    approval: { approval_identity: { channel: "ed25519", key_id: "ab12cd34" },
+      nonce: "f".repeat(64), issued_at: 1751900000000, expiry: 1751900120000 },
+    certs: [], emitted_bytes: "{}",
+    kernel_identity: { wasm_sha256: "0".repeat(64), self_verified: true },
+    kernel_config: PAYCFG, granted_capabilities: [],
+  });
+  let rv = F.validateReceipt(v2r);
+  check("v2 assembled receipt validates", JSON.stringify([rv.ok, rv.version, rv.errors]), JSON.stringify([true, "v2", []]));
+  check("v2 roundtrip byte-identical",
+    JSON.stringify(F.assembleReceiptV2(JSON.parse(JSON.stringify(v2r)))), JSON.stringify(v2r));
+  rv = F.validateReceipt({ ...v2r, amount: 39999 });
+  check("v2 rejects amount != bound argument (gate:amount-merchant-mismatch)", rv.ok, false);
+  rv = F.validateReceipt({ ...v2r, args_hash: "0".repeat(64) });
+  check("v2 rejects args_hash mismatch", rv.ok, false);
+
   // --- kit-local regressions against the on-disk v1 fixtures ----------------
   const fx = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "fixtures", "receipt-block.json"), "utf8"));
   let v = F.validateReceipt(fx);
-  check("block fixture validates as v1", JSON.stringify([v.ok, v.version, v.errors]), JSON.stringify([true, "v1", []]));
+  check("block fixture validates as v2", JSON.stringify([v.ok, v.version, v.errors]), JSON.stringify([true, "v2", []]));
   check("block fixture canonical_request == derived line (§2)",
     fx.canonical_request, F.canonicalRequest(fx.tool, fx.arguments));
   check("block fixture canonical_request_sha256 == derived-from-call (§2 verifier obligation)",
@@ -60,8 +99,8 @@ function check(name, got, want) {
   // --- cross-tool fixture (produced by seal-check) validates here too -------
   const cross = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "fixtures", "receipt-crosstool.json"), "utf8"));
   v = F.validateReceipt(cross);
-  check("cross-tool fixture (seal-check-produced) validates as v1",
-    JSON.stringify([v.ok, v.version]), JSON.stringify([true, "v1"]));
+  check("cross-tool fixture (seal-check-produced) validates as v2",
+    JSON.stringify([v.ok, v.version]), JSON.stringify([true, "v2"]));
 
   console.log(failures === 0 ? "\nALL VECTORS PASS" : `\n${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);
