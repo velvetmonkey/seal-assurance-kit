@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
-// seal assurance kit CLI. One binary, four commands: verify | test | scan | adequacy.
+// seal assurance kit CLI. One binary, five commands: verify | test | scan | adequacy | receipt-diff.
 //
 // Exit codes (also in README "Exit codes"):
 //   0  check passed (or help / version)
@@ -22,6 +22,13 @@ const HELP = [
   "  seal scan diff <old> <new> <policy>   what changed since last scan",
   "  seal adequacy check <labels>          finite monitor-resolution adequacy",
   "  seal adequacy find-collision <labels> find a semantic monitor collision",
+  "  seal receipt-diff <A.json> <B.json> [--json]",
+  "                                authorization-surface diff between two receipts:",
+  "                                what changed, grouped AUTHORIZATION vs MINOR.",
+  "                                (reports change only — does not re-verify a seal,",
+  "                                 and does not judge field-set sufficiency)",
+  "                                exit: 0 no auth drift · 1 drift · 2 malformed/",
+  "                                legacy/tampered",
   "",
   "  --help, -h      this help",
   "  --version, -V   print the kit version",
@@ -83,6 +90,16 @@ async function main() {
     const [t, p] = process.argv.slice(3);
     if (!t || !p) usageError("usage: seal scan <tools.json> <policy.json>");
     process.exit(scan(path.resolve(t), path.resolve(p)) ? 0 : 1);
+  }
+  if (cmd === "receipt-diff") {
+    const args = process.argv.slice(3);
+    const json = args.includes("--json");
+    const files = args.filter((a) => !a.startsWith("--"));
+    const bad = args.filter((a) => a.startsWith("--") && a !== "--json");
+    if (bad.length) usageError(`unknown flag: ${bad[0]}`);
+    if (files.length !== 2) usageError("usage: seal receipt-diff <A.json> <B.json> [--json]");
+    const { receiptDiff } = require(path.join(__dirname, "../src/receipt-diff.cjs"));
+    process.exit(await receiptDiff(path.resolve(files[0]), path.resolve(files[1]), { json }));
   }
   if (cmd === "adequacy") {
     const sub = process.argv[3];

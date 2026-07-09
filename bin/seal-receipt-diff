@@ -1,0 +1,7 @@
+#!/usr/bin/env node
+// SPDX-License-Identifier: Apache-2.0
+// Thin alias: `seal-receipt-diff A B` == `seal receipt-diff A B`.
+// May graduate to a standalone repo; the implementation lives in
+// src/receipt-diff.cjs either way.
+process.argv.splice(2, 0, "receipt-diff");
+require("./seal");

@@ -4,17 +4,19 @@
   "description": "Assurance kit for MCP tool mediation: verify decision receipts, test boundary conformance, audit policy coverage, and check finite monitor adequacy.",
   "bin": {
     "seal-assure": "bin/seal",
-    "seal": "bin/seal"
+    "seal": "bin/seal",
+    "seal-receipt-diff": "bin/seal-receipt-diff"
   },
   "license": "Apache-2.0",
   "scripts": {
     "gen": "node src/gen-receipt.cjs",
     "verify": "node bin/seal verify fixtures/receipt-block.json && node bin/seal verify fixtures/receipt-allow.json && node bin/seal verify fixtures/receipt-crosstool.json",
-    "test": "npm run --silent verify && npm run --silent test:drift && npm run --silent test:bypass && npm run --silent test:format && npm run --silent test:adequacy",
+    "test": "npm run --silent verify && npm run --silent test:drift && npm run --silent test:bypass && npm run --silent test:format && npm run --silent test:adequacy && npm run --silent test:receipt-diff",
     "test:drift": "node test/fixture-drift.cjs",
     "test:format": "node test/format-check.cjs",
     "test:adequacy": "node test/adequacy-check.cjs",
     "test:adequacy-bridge": "node scripts/adequacy_bridge.mjs",
-    "test:bypass": "node test/expect-fail.cjs node bin/seal verify fixtures/receipt-bypass.json"
+    "test:bypass": "node test/expect-fail.cjs node bin/seal verify fixtures/receipt-bypass.json",
+    "test:receipt-diff": "node test/receipt-diff.test.cjs"
   }
 }

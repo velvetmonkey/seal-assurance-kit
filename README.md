@@ -19,7 +19,7 @@ That is the product line in one sentence: prove the rulebook, then check every b
 
 ## What happens when you need evidence for a boundary review
 
-Run `seal verify` on a receipt to re-derive the decision from the receipt's own policy and call. Run `seal scan` on an MCP tool catalogue to find unguarded mutating tools. Run `seal test` to replay the conformance corpus against a boundary. Run `seal adequacy` to check whether supplied monitor evidence separates labels in a finite sample.
+Run `seal verify` on a receipt to re-derive the decision from the receipt's own policy and call. Run `seal scan` on an MCP tool catalogue to find unguarded mutating tools. Run `seal test` to replay the conformance corpus against a boundary. Run `seal adequacy` to check whether supplied monitor evidence separates labels in a finite sample. Run `seal receipt-diff` on two receipts to see what changed and whether the change touches the authorization surface.
 
 The kit is deliberately boring: PASS, FAIL, WARN, and files an auditor can rerun.
 
@@ -57,12 +57,41 @@ node bin/seal adequacy check fixtures/adequacy-pass.json
 Input formats for `scan` and `adequacy` (policy / tools / labels JSON) are
 documented with annotated examples in [docs/SCHEMAS.md](docs/SCHEMAS.md).
 
+## `seal receipt-diff` — authorization-surface diff
+
+Two receipts can look alike and authorize different effects. `seal receipt-diff A.json B.json`
+computes a field-level diff and classifies every difference:
+
+| group | fields | meaning |
+|---|---|---|
+| **AUTHORIZATION-SURFACE** (flag loud, exit 1) | `tool`, `arguments` (key order significant — compared via the canonical request pre-image, schema §2), derived `canonical_request_sha256`, `args_hash`, `verdict`, `deny_kernel`, `bypass`, `approval` (identity, policy_hash, and freshness fields when a channel emits them), `granted_capabilities`, `kernel_config`, `kernel_identity.wasm_sha256` | the change alters what was authorized, by whom, or under which kernel/policy |
+| **MINOR** (reported, exit 0) | `reason`, `now` (logical clock), `asserted_provenance`, `signature`, `policy_id`, `kernel_identity.self_verified`, `certs`, `emitted_bytes`, producer-local blocks | cosmetic, provenance, or derived transcript. `certs`/`emitted_bytes` are MINOR by design: the verdict is the conjunction of gates, so any per-gate flip necessarily moves `verdict` or `deny_kernel` (both AUTHORIZATION) — a change cannot hide in the transcript |
+
+Integrity comes first: each receipt's `canonical_request_sha256` (and v2 `args_hash`) is
+re-derived from its **own** (tool, arguments) in stored key order before any diff; a mismatch is
+flagged stale/tampered (exit 2) and nothing is diffed. Accepts v2, v1, and legacy `v0-live`;
+rejects Schema K with the legacy error naming the schema doc. A pre-v2 vs v2 pair gets an
+explicit callout — "approval surface widened: +args_hash, +approval" — the exact upgrade the
+sufficiency analysis proved necessary.
+
+**Honest scope:**
+
+| question | tool |
+|---|---|
+| Did anything change between these receipts, and does it touch what is authorized? | `seal receipt-diff` |
+| Is this receipt well-formed, untampered, and re-derivable through the kernel? | `seal verify` |
+| Does the field set carry enough information to justify the claim at all? | the sufficiency analyzer (private; see CLAIMS.md) |
+
+`receipt-diff` does **not** re-run the kernel, and a clean diff is not a verification of either
+receipt. `--json` for machine output. Deterministic: same inputs, same bytes. It may graduate to
+a standalone repo later; the implementation lives in `src/receipt-diff.cjs` either way.
+
 ## Exit codes
 
 | code | meaning |
 |---|---|
 | 0 | check passed (also help / `--version`) |
-| 1 | check ran and **failed**: NOT VERIFIED, scan FAIL (uncovered tools), NON-CONFORMANT, adequacy collision |
+| 1 | check ran and **failed**: NOT VERIFIED, scan FAIL (uncovered tools), NON-CONFORMANT, adequacy collision, receipt-diff authorization drift |
 | 2 | usage error: unknown command, flag, or profile; missing argument |
 | 3 | internal error (unexpected exception — not a verdict) |
 
