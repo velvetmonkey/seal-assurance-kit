@@ -44,7 +44,19 @@ node bin/seal scan fixtures/tools.json fixtures/policy.json
 
 A tool that cannot fail is theatre. These two failures are the kit doing its job; wire the same
 commands into CI so an uncovered tool or an unverifiable receipt fails your build (exit codes:
-0 pass · 1 fail · 2 usage · 3 internal).
+0 pass · 1 fail · 2 usage · 3 internal). For GitHub Actions, `seal-verify-action` packages the
+same pinned `seal verify` closure as a ready-made CI gate.
+
+## 3b. Compare two receipts
+
+```sh
+node bin/seal receipt-diff fixtures/receipt-allow.json fixtures/receipt-block.json
+# AUTHORIZATION-SURFACE DRIFT (...)   → exit 1: these receipts do not authorize the same thing
+```
+
+`receipt-diff` classifies every field-level difference as authorization-surface vs minor,
+after checking each receipt's stored hashes against its own arguments. It reports change; it
+does not re-verify a seal.
 
 ## 4. Full suite
 

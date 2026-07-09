@@ -78,9 +78,10 @@ sufficiency analysis proved necessary.
 
 | question | tool |
 |---|---|
-| Did anything change between these receipts, and does it touch what is authorized? | `seal receipt-diff` |
-| Is this receipt well-formed, untampered, and re-derivable through the kernel? | `seal verify` |
-| Does the field set carry enough information to justify the claim at all? | the sufficiency analyzer (private; see CLAIMS.md) |
+| Is this receipt well-formed, canonical, and re-derivable? | `seal verify` (this kit) |
+| Does the field set carry **enough** to justify the claim? | `witness-check` — the sufficiency analyzer (private; see CLAIMS.md) |
+| What changed between two receipts — does it touch what is **authorized**? | `seal receipt-diff` (this kit) |
+| Gate receipts in CI | `seal-verify-action` — runs `seal verify` in GitHub Actions and fails the build on an unverifiable receipt (the sufficiency and diff checks are local tools today) |
 
 `receipt-diff` does **not** re-run the kernel, and a clean diff is not a verification of either
 receipt. `--json` for machine output. Deterministic: same inputs, same bytes. It may graduate to
@@ -108,6 +109,8 @@ _All Seal-family repositories are currently private; these links resolve only fo
 - [seal-check](https://github.com/velvetmonkey/seal-check): Don't trust. Verify.
 - [seal-live-demo](https://github.com/velvetmonkey/seal-live-demo): Watch it work.
 - [seal-assurance-kit](https://github.com/velvetmonkey/seal-assurance-kit): Check your own boundary.
+- [witness-check](https://github.com/velvetmonkey/witness-check): The sufficiency analyzer. (private/proprietary)
+- [seal-verify-action](https://github.com/velvetmonkey/seal-verify-action): Gate receipts in CI.
 
 ## Documentation
 
