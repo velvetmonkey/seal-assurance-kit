@@ -15,17 +15,32 @@
 <!-- truthbox:end -->
 > Map: [EVALUATOR-START.md](https://github.com/velvetmonkey/seal/blob/main/EVALUATOR-START.md) · profile detail: [PROFILE.md](https://github.com/velvetmonkey/seal-host/blob/main/PROFILE.md) — both in private repos; the links resolve only for authorised evaluators.
 
-**Luxury 30-second showcase**
+**Luxury 30-second showcase — the family's fastest PASS**
+
+No Lean toolchain, no Docker, no build, no network, zero npm dependencies: just Node and this repo. This is the family front door — the quickest way to watch a real receipt re-derive to `PASS VERIFIED` before you touch anything heavier.
 
 ```bash
 bash scripts/showcase.sh
 ```
 
-(Or the explicit node bin/seal ... ) — prints PASS VERIFIED for good, FAIL UNCOVERED for scan. Visible terminal outcome.
+Or run the one command explicitly:
+
+```bash
+node bin/seal verify fixtures/receipt-block.json   # exit 0: PASS VERIFIED
+```
+
+Prints `PASS VERIFIED` for a good receipt and `FAIL` (exit 1) for an uncovered scan. Visible terminal outcome, rerun-able, boring on purpose.
 
 ## What happens when you need evidence for a boundary review
 
-... (rest of page unchanged; the boring PASS/FAIL tools above are the entry point)
+You hand the kit an artifact and it gives you a one-line verdict plus the gap:
+
+- **A receipt** → `seal verify` re-derives it from its own bytes (schema, kernel-binary match, canonical request hash, verdict). PASS or the exact failing check.
+- **A tool catalogue + policy** → `seal scan` names every mutating tool no approval covers and exits 1, so unguarded surface fails CI instead of shipping.
+- **Two receipts** → `seal receipt-diff` classifies every field change as AUTHORIZATION-SURFACE (loud, exit 1) or MINOR.
+- **A label set** → `seal adequacy` checks the evidence actually separates the labels rather than looking like it does.
+
+The [Verify in five minutes](#verify-in-five-minutes) block below runs each of these against shipped fixtures. Nothing here reaches the network or mutates your tree.
 
 ## For evaluators and auditors
 
