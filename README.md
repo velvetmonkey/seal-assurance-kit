@@ -18,13 +18,10 @@
 **Luxury 30-second showcase**
 
 ```bash
-npm test
-node bin/seal verify fixtures/receipt-block.json   # PASS VERIFIED
-node bin/seal scan fixtures/tools.json fixtures/policy.json   # FAIL (exit 1) — uncovers the mutating tools
-node bin/seal adequacy check fixtures/adequacy-pass.json
+bash scripts/showcase.sh
 ```
 
-You see the gaps immediately. The commands are the product.
+(Or the explicit node bin/seal ... ) — prints PASS VERIFIED for good, FAIL UNCOVERED for scan. Visible terminal outcome.
 
 ## What happens when you need evidence for a boundary review
 
