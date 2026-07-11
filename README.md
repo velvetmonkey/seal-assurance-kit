@@ -2,9 +2,14 @@
 
 CLI tools for checking Seal receipts, MCP mediation coverage, conformance traces, and finite monitor adequacy. **Role:** Check your own boundary.
 
+**What you run:** `seal verify` (re-derive a receipt's decision) · `seal scan` (find unguarded mutating tools) · `seal test` (replay the conformance corpus) · `seal adequacy` (does the evidence separate the labels?) · `seal receipt-diff` (did the authorization surface change?). Output is PASS / FAIL / WARN and files an auditor can rerun.
+
 ![CLI](https://img.shields.io/badge/interface-CLI-black)
 ![Domain](https://img.shields.io/badge/domain-MCP%20mediation-informational)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
+
+<!-- TODO(asset, shot #12): real asciinema/terminal cast — `seal verify` PASS, then
+     `seal scan` FAIL(exit 1) on an uncovered tool. Place directly under the command menu. -->
 
 <!-- truthbox:begin -->
 > **Runtime profile: `compatible`.** Strict `canonical-l0` is proved and modelled, not the deployed route yet.
@@ -13,7 +18,7 @@ CLI tools for checking Seal receipts, MCP mediation coverage, conformance traces
 <!-- truthbox:end -->
 > Map: [EVALUATOR-START.md](https://github.com/velvetmonkey/seal/blob/main/EVALUATOR-START.md) · profile detail: [PROFILE.md](https://github.com/velvetmonkey/seal-host/blob/main/PROFILE.md) — both in private repos; the links resolve only for authorised evaluators.
 
-**Seal is the approval gateway for agentic tool use: it lets agents read and reason, but forces every protected external effect through an exact, recorded, checkable approval boundary.** When an AI agent tries to use a real tool over MCP (send money, delete a record, call an external service), Seal stands in the way and asks one question: did a human explicitly approve *this exact request*? No matching approval, no action. Every decision is written into a tamper-evident record you can check yourself. What makes Seal different from other guardrails: the core mediation rules aren't just tested, they're machine-checked theorems in Lean 4. The same decision logic then runs byte-for-byte in the Rust host you deploy, in the browser, and in the checker, each verified against that one proven rulebook.
+**Seal is the approval gateway for agentic tool use: it lets agents read and reason, but forces every protected external effect through an exact, recorded, checkable approval boundary.** When an AI agent tries to use a real tool over MCP (send money, delete a record, call an external service), Seal stands in the way and asks one question: did a human explicitly approve *this exact request*? No matching approval, no action. Every decision is written into a tamper-evident record you can check yourself. What makes Seal different from other guardrails: the core mediation rules aren't just tested, they're machine-checked theorems in Lean 4. The same decision logic then runs in the Rust host you deploy, in the browser, and in the checker — each checked byte-for-byte against that one proven rulebook over the conformance corpus.
 
 That is the product line in one sentence: prove the rulebook, then check every body that runs it. Seal is built around MCP because MCP is where agent intent becomes an external effect. The proof says what the kernel must do; the conformance tests show that the Rust, wasm, and JavaScript artifacts used by the product family emit the same decisions and records over the shared corpus.
 
@@ -113,7 +118,7 @@ _All Seal-family repositories are currently private; these links resolve only fo
 - [seal-check](https://github.com/velvetmonkey/seal-check): Don't trust. Verify.
 - [seal-live-demo](https://github.com/velvetmonkey/seal-live-demo): Watch it work.
 - [seal-assurance-kit](https://github.com/velvetmonkey/seal-assurance-kit): Check your own boundary.
-- [witness-check](https://github.com/velvetmonkey/witness-check): The sufficiency analyzer. (private/proprietary)
+- [witness-check](https://github.com/velvetmonkey/witness-check): The sufficiency analyzer. (proprietary)
 - [seal-verify-action](https://github.com/velvetmonkey/seal-verify-action): Gate receipts in CI.
 
 ## Documentation
