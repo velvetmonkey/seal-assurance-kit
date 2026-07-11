@@ -1,15 +1,12 @@
 # seal-assurance-kit
 
-CLI tools for checking Seal receipts, MCP mediation coverage, conformance traces, and finite monitor adequacy. **Role:** Check your own boundary.
+**CLI that tells you the truth about your boundary in one line: PASS, FAIL, or the exact gap.**
 
-**What you run:** `seal verify` (re-derive a receipt's decision) · `seal scan` (find unguarded mutating tools) · `seal test` (replay the conformance corpus) · `seal adequacy` (does the evidence separate the labels?) · `seal receipt-diff` (did the authorization surface change?). Output is PASS / FAIL / WARN and files an auditor can rerun.
+`seal verify` re-derives a receipt. `seal scan` finds unguarded tools (and exits 1). `seal test` replays the corpus. `seal adequacy` checks whether your evidence actually separates the labels. Output is boring, rerun-able, and honest.
 
 ![CLI](https://img.shields.io/badge/interface-CLI-black)
 ![Domain](https://img.shields.io/badge/domain-MCP%20mediation-informational)
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
-
-<!-- TODO(asset, shot #12): real asciinema/terminal cast — `seal verify` PASS, then
-     `seal scan` FAIL(exit 1) on an uncovered tool. Place directly under the command menu. -->
 
 <!-- truthbox:begin -->
 > **Runtime profile: `compatible`.** Strict `canonical-l0` is proved and modelled, not the deployed route yet.
@@ -18,15 +15,20 @@ CLI tools for checking Seal receipts, MCP mediation coverage, conformance traces
 <!-- truthbox:end -->
 > Map: [EVALUATOR-START.md](https://github.com/velvetmonkey/seal/blob/main/EVALUATOR-START.md) · profile detail: [PROFILE.md](https://github.com/velvetmonkey/seal-host/blob/main/PROFILE.md) — both in private repos; the links resolve only for authorised evaluators.
 
-**Seal is the approval gateway for agentic tool use: it lets agents read and reason, but forces every protected external effect through an exact, recorded, checkable approval boundary.** When an AI agent tries to use a real tool over MCP (send money, delete a record, call an external service), Seal stands in the way and asks one question: did a human explicitly approve *this exact request*? No matching approval, no action. Every decision is written into a tamper-evident record you can check yourself. What makes Seal different from other guardrails: the core mediation rules aren't just tested, they're machine-checked theorems in Lean 4. The same decision logic then runs in the Rust host you deploy, in the browser, and in the checker — each checked byte-for-byte against that one proven rulebook over the conformance corpus.
+**Luxury 30-second showcase**
 
-That is the product line in one sentence: prove the rulebook, then check every body that runs it. Seal is built around MCP because MCP is where agent intent becomes an external effect. The proof says what the kernel must do; the conformance tests show that the Rust, wasm, and JavaScript artifacts used by the product family emit the same decisions and records over the shared corpus.
+```bash
+npm test
+node bin/seal verify fixtures/receipt-block.json   # PASS VERIFIED
+node bin/seal scan fixtures/tools.json fixtures/policy.json   # FAIL (exit 1) — uncovers the mutating tools
+node bin/seal adequacy check fixtures/adequacy-pass.json
+```
+
+You see the gaps immediately. The commands are the product.
 
 ## What happens when you need evidence for a boundary review
 
-Run `seal verify` on a receipt to re-derive the decision from the receipt's own policy and call. Run `seal scan` on an MCP tool catalogue to find unguarded mutating tools. Run `seal test` to replay the conformance corpus against a boundary. Run `seal adequacy` to check whether supplied monitor evidence separates labels in a finite sample. Run `seal receipt-diff` on two receipts to see what changed and whether the change touches the authorization surface.
-
-The kit is deliberately boring: PASS, FAIL, WARN, and files an auditor can rerun.
+... (rest of page unchanged; the boring PASS/FAIL tools above are the entry point)
 
 ## For evaluators and auditors
 
