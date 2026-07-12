@@ -4,16 +4,7 @@
 
 `seal verify` re-derives a receipt. `seal scan` finds unguarded tools (and exits 1). `seal test` replays the corpus. `seal adequacy` checks whether your evidence actually separates the labels. Output is boring, rerun-able, and honest.
 
-![CLI](https://img.shields.io/badge/interface-CLI-black)
-![Domain](https://img.shields.io/badge/domain-MCP%20mediation-informational)
-![License](https://img.shields.io/badge/license-Apache--2.0-blue)
-
-<!-- truthbox:begin -->
-> **Runtime profile: `compatible`.** Strict `canonical-l0` is proved and modelled, not the deployed route yet.
-> **Claim:** policy-covered request-effects recognised by the compatible MCP boundary require a matching live human approval and an allowing Lean kernel verdict; seam failures block; every decision emits replayable evidence.
-> **Non-claim:** the deployed host is not proved end to end, and canonical parser rejection is not currently the runtime gate. Host `ApprovalRecord` tokens are a separate signed channel from the v2 canonical approval tuple.
-<!-- truthbox:end -->
-> Map: [EVALUATOR-START.md](https://github.com/velvetmonkey/seal/blob/main/EVALUATOR-START.md) · profile detail: [PROFILE.md](https://github.com/velvetmonkey/seal-host/blob/main/PROFILE.md) — both in private repos; the links resolve only for authorised evaluators.
+## Quick start: first PASS
 
 **Luxury 30-second showcase — the family's fastest PASS**
 
@@ -30,6 +21,17 @@ node bin/seal verify fixtures/receipt-block.json   # exit 0: PASS VERIFIED
 ```
 
 Prints `PASS VERIFIED` for a good receipt and `FAIL` (exit 1) for an uncovered scan. Visible terminal outcome, rerun-able, boring on purpose.
+
+![CLI](https://img.shields.io/badge/interface-CLI-black)
+![Domain](https://img.shields.io/badge/domain-MCP%20mediation-informational)
+![License](https://img.shields.io/badge/license-Apache--2.0-blue)
+
+<!-- truthbox:begin -->
+> **Runtime profile: `compatible`.** Strict `canonical-l0` is proved and modelled, not the deployed route yet.
+> **Claim:** policy-covered request-effects recognised by the compatible MCP boundary require a matching live human approval and an allowing Lean kernel verdict; seam failures block; every decision emits replayable evidence.
+> **Non-claim:** the deployed host is not proved end to end, and canonical parser rejection is not currently the runtime gate. Host `ApprovalRecord` tokens are a separate signed channel from the v2 canonical approval tuple.
+<!-- truthbox:end -->
+> Map: [EVALUATOR-START.md](https://github.com/velvetmonkey/seal/blob/main/EVALUATOR-START.md) · profile detail: [PROFILE.md](https://github.com/velvetmonkey/seal-host/blob/main/PROFILE.md) — both in private repos; the links resolve only for authorised evaluators.
 
 ## What happens when you need evidence for a boundary review
 
