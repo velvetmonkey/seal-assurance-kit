@@ -14,11 +14,11 @@ import { buildEnvelope, buildStepInput, parseVerdict, PUBKEY } from "./seal-conf
 import { assembleReceiptV2, canonicalRequest, canonicalRequestSha256 } from "./receipt-format.js";
 
 // --- pinned kernel identity (see AUDIT.md) ----------------------------------
-// sha256 of wasm/seal.wasm, computed 2026-07-05. This is THE kernel id and the
+// sha256 of wasm/seal.wasm, computed 2026-07-12. This is THE kernel id and the
 // ONLY thing seal-check verifies in the browser. Toolchain + axioms below are
 // LABELLED provenance the public Lean proofs assert — NOT verified here, NOT
 // blended into the hash.
-export const KERNEL_WASM_SHA256 = "ebd17c14668176612c49f6e2940b23df82a2c1a7cdef6759f0d6276ae997e9d0";
+export const KERNEL_WASM_SHA256 = "df42cbada2297741bfeab99f222b96ac02e43a4ce8695b24922b425b8d66b1e8";
 export const WASM_URL = "wasm/seal.wasm";
 export const LEAN_TOOLCHAIN = "leanprover/lean4:v4.28.0";
 export const KERNEL_AXIOMS = ["propext", "Classical.choice", "Quot.sound"];

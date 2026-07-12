@@ -10,6 +10,15 @@ const crypto = require("crypto");
 const ROOT = path.resolve(__dirname);
 const WASM_DIR = path.join(ROOT, "wasm");
 let _M = null, _cfg = null, _K = null;
+const configKeys = crypto.generateKeyPairSync("ed25519");
+const configPublicKey = Buffer.from(configKeys.publicKey.export({ type: "spki", format: "der" }))
+  .subarray(-32).toString("hex");
+
+function signedEnvelope(config) {
+  const payload = JSON.stringify(config);
+  const signature = crypto.sign(null, Buffer.from(payload, "utf8"), configKeys.privateKey).toString("hex");
+  return JSON.stringify({ payload, signature });
+}
 
 async function load() {
   if (_M) return { M: _M, cfg: _cfg, K: _K };
@@ -36,7 +45,7 @@ function kernelSha() {
 async function decide(config, { tool, args = {}, approvals = [], now = 1000 }) {
   const { M, cfg, K } = await load();
   const ir = JSON.parse(M.ccall("seal_init", "string", ["string", "string"],
-    [cfg.buildEnvelope(config), cfg.PUBKEY]));
+    [signedEnvelope(config), configPublicKey]));
   if (ir.ok !== true) throw new Error("seal_init failed: " + JSON.stringify(ir));
   const step = cfg.buildStepInput({ tool, args, approvals, now });
   const raw = M.ccall("seal_decide", "string", ["string"], [step]);
@@ -54,7 +63,7 @@ async function decide(config, { tool, args = {}, approvals = [], now = 1000 }) {
 async function decideSeq(config, steps, tool) {
   const { M, cfg } = await load();
   const ir = JSON.parse(M.ccall("seal_init", "string", ["string", "string"],
-    [cfg.buildEnvelope(config), cfg.PUBKEY]));
+    [signedEnvelope(config), configPublicKey]));
   if (ir.ok !== true) throw new Error("seal_init failed: " + JSON.stringify(ir));
   let raw, step;
   steps.forEach((s, i) => {
