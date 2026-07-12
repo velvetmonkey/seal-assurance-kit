@@ -16,6 +16,30 @@ const READONLY_VERBS = /\b(read|get|list|query|search|fetch|show|view|describe|i
 function readJson(p) { return JSON.parse(fs.readFileSync(p, "utf8")); }
 function toolList(doc) { return Array.isArray(doc) ? doc : (doc.tools || []); }
 
+function isV2Policy(policy) {
+  return policy && policy.safety && Array.isArray(policy.safety.tools);
+}
+
+function v2RulesFor(name, policy) {
+  return (policy.safety.tools || []).filter((rule) => rule && rule.name === name);
+}
+
+function v2CatchAllMode(name, policy) {
+  const modes = v2RulesFor(name, policy)
+    .filter((rule) => !rule.match || rule.match.type === "always")
+    .map((rule) => rule.mode === "guarded" ? "guard" : rule.mode);
+  if (modes.includes("deny")) return "deny";
+  if (modes.includes("guard")) return "guard";
+  if (modes.includes("allow")) return "allow";
+  return null;
+}
+
+function v2ConditionalModes(name, policy) {
+  return v2RulesFor(name, policy)
+    .filter((rule) => rule.match && rule.match.type !== "always")
+    .map((rule) => rule.mode === "guarded" ? "guard" : rule.mode);
+}
+
 // mutating | readonly  — annotations win, then policy-declared effect, then heuristic.
 function effectOf(tool, rule) {
   const a = tool.annotations || {};
@@ -41,6 +65,24 @@ function ruleFor(name, rules) {
 }
 
 function classify(tool, policy) {
+  if (isV2Policy(policy)) {
+    const effect = effectOf(tool, null);
+    const guard = v2CatchAllMode(tool.name, policy);
+    if (!guard) {
+      const conditional = v2ConditionalModes(tool.name, policy);
+      if (conditional.includes("guard")) return { bucket: "guarded", effect, guard: "guard (conditional; no-match denies)" };
+      if (conditional.includes("deny") && !conditional.includes("allow")) return { bucket: "denied", effect, guard: "deny (conditional; no-match denies)" };
+      if (conditional.includes("allow")) return {
+        bucket: effect === "mutating" ? "allowed-ungated" : "readonly",
+        effect,
+        guard: "allow (conditional; no-match denies)",
+      };
+      return { bucket: "uncovered", effect, guard: null };
+    }
+    if (guard === "deny") return { bucket: "denied", effect, guard };
+    if (guard === "guard") return { bucket: "guarded", effect, guard };
+    return { bucket: effect === "mutating" ? "allowed-ungated" : "readonly", effect, guard };
+  }
   const rule = ruleFor(tool.name, policy.rules || {});
   const effect = effectOf(tool, rule);
   if (!rule) return { bucket: effect === "mutating" ? "uncovered" : "readonly", effect, guard: null };
@@ -51,13 +93,20 @@ function classify(tool, policy) {
 }
 
 function scan(toolsPath, policyPath) {
-  const tools = toolList(readJson(toolsPath));
+  const toolDoc = readJson(toolsPath);
+  const tools = toolList(toolDoc);
   const policy = readJson(policyPath);
   const buckets = { guarded: [], denied: [], "allowed-ungated": [], uncovered: [], readonly: [] };
   for (const t of tools) {
     const c = classify(t, policy);
     buckets[c.bucket].push({ name: t.name, guard: c.guard, effect: c.effect });
   }
+  const manifestNames = new Set(tools.map((tool) => tool.name));
+  const orphanAllows = isV2Policy(policy)
+    ? policy.safety.tools.filter((rule) => rule.mode === "allow" && !manifestNames.has(rule.name))
+    : [];
+  const serverMismatch = isV2Policy(policy) && typeof toolDoc.server === "string" &&
+    typeof policy.server === "string" && toolDoc.server !== policy.server;
   const show = (label, arr, fmt = (x) => x.name) => {
     if (!arr.length) return;
     console.log(`\n${label} (${arr.length}):`);
@@ -66,13 +115,19 @@ function scan(toolsPath, policyPath) {
   console.log(`seal scan  ${toolsPath}  x  ${policyPath}   (${tools.length} tools)`);
   show("GUARDED", buckets.guarded, (x) => `${x.name}  [${x.guard}]`);
   show("DENIED", buckets.denied);
-  show("readonly (informational)", buckets.readonly);
+  show("readonly (informational)", buckets.readonly, (x) => `${x.name}${x.guard ? `  [${x.guard}]` : ""}`);
   show("WARN  allowed but ungated (mutating, guard=allow)", buckets["allowed-ungated"]);
-  show("FAIL  UNCOVERED effectful tools", buckets.uncovered);
+  show("FAIL  UNCOVERED tools", buckets.uncovered);
+  show("FAIL  ORPHAN explicit ALLOW rules", orphanAllows, (rule) => rule.name);
+  if (serverMismatch) console.log(`\nFAIL  server identity mismatch: manifest=${toolDoc.server} policy=${policy.server}`);
   const nUncovered = buckets.uncovered.length, nWarn = buckets["allowed-ungated"].length;
-  console.log(`\n  ${nUncovered ? "FAIL" : "PASS"}  ${nUncovered} uncovered, ${nWarn} ungated, ` +
+  const failed = nUncovered > 0 || nWarn > 0 || orphanAllows.length > 0 || serverMismatch;
+  console.log(`\n  ${failed ? "FAIL" : "PASS"}  ${nUncovered} uncovered, ${nWarn} ungated, ` +
     `${buckets.guarded.length} guarded, ${buckets.denied.length} denied, ${buckets.readonly.length} read-only`);
-  return nUncovered === 0;
+  if (isV2Policy(policy)) {
+    console.log("  warrant: JS scan differentially bound to Lean scan_pass_sound over corpus C (differential evidence, not universal verification); finite manifest scope; annotations + manifest completeness remain assumptions.");
+  }
+  return !failed;
 }
 
 function diff(oldPath, newPath, policyPath) {
@@ -96,4 +151,4 @@ function diff(oldPath, newPath, policyPath) {
   return newUncovered.length === 0;
 }
 
-module.exports = { scan, diff };
+module.exports = { scan, diff, classify };

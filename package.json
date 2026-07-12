@@ -11,12 +11,15 @@
   "scripts": {
     "gen": "node src/gen-receipt.cjs",
     "verify": "node bin/seal verify fixtures/receipt-block.json && node bin/seal verify fixtures/receipt-allow.json && node bin/seal verify fixtures/receipt-crosstool.json",
-    "test": "npm run --silent verify && npm run --silent test:drift && npm run --silent test:bypass && npm run --silent test:format && npm run --silent test:adequacy && npm run --silent test:receipt-diff",
+    "test": "npm run --silent verify && npm run --silent test:drift && npm run --silent test:bypass && npm run --silent test:format && npm run --silent test:adequacy && npm run --silent test:receipt-diff && npm run --silent test:policy-sign && npm run --silent test:scan-v2 && npm run --silent test:connect",
     "test:drift": "node test/fixture-drift.cjs",
     "test:format": "node test/format-check.cjs",
     "test:adequacy": "node test/adequacy-check.cjs",
     "test:adequacy-bridge": "node scripts/adequacy_bridge.mjs",
     "test:bypass": "node test/expect-fail.cjs node bin/seal verify fixtures/receipt-bypass.json",
-    "test:receipt-diff": "node test/receipt-diff.test.cjs"
+    "test:receipt-diff": "node test/receipt-diff.test.cjs",
+    "test:policy-sign": "node --test test/policy-sign.test.cjs",
+    "test:connect": "node --test test/connect.test.cjs",
+    "test:scan-v2": "node --test test/scan-v2.test.cjs"
   }
 }

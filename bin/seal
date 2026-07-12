@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
-// seal assurance kit CLI. One binary, five commands: verify | test | scan | adequacy | receipt-diff.
+// seal assurance kit CLI.
 //
 // Exit codes (also in README "Exit codes"):
 //   0  check passed (or help / version)
@@ -8,6 +8,7 @@
 //   2  usage error (unknown command / flag / profile, missing argument)
 //   3  internal error (unexpected exception — not a verdict)
 const path = require("path");
+const readline = require("node:readline");
 
 const KNOWN_PROFILES = ["L0"];
 
@@ -15,6 +16,8 @@ const HELP = [
   "seal assurance kit",
   "",
   "  seal verify <receipt.json>    verify a decision receipt (re-derive, trust nothing)",
+  "  seal init <manifest.tools.json> [--out <policy.json>]",
+  "                                scaffold an exact-name reviewable policy",
   "  seal test   [--profile L0]    MCP boundary conformance oracle",
   "  seal scan   <tools> <policy>  MCP policy coverage auditor",
   "                                (FAIL + exit 1 = uncovered mutating tools found;",
@@ -29,6 +32,10 @@ const HELP = [
   "                                 and does not judge field-set sufficiency)",
   "                                exit: 0 no auth drift · 1 drift · 2 malformed/",
   "                                legacy/tampered",
+  "  seal policy sign <policy.json> --key <seed-file> [--out <trusted.json>] [--yes]",
+  "                                validate and Ed25519-sign a policy envelope",
+  "  seal connect --client claude [--desktop] [--profile <profile.json>]",
+  "  seal disconnect --client claude [--desktop]",
   "",
   "  --help, -h      this help",
   "  --version, -V   print the kit version",
@@ -41,6 +48,13 @@ function usageError(msg) {
   console.error(msg);
   console.error("run `seal --help` for usage");
   process.exit(2);
+}
+
+function confirm(question) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+    rl.question(question, (answer) => { rl.close(); resolve(answer.trim().toLowerCase() === "y"); });
+  });
 }
 
 async function main() {
@@ -59,6 +73,104 @@ async function main() {
     const { verify } = require(path.join(__dirname, "../src/verify.cjs"));
     const ok = await verify(path.resolve(f));
     process.exit(ok ? 0 : 1);
+  }
+  if (cmd === "init") {
+    const manifest = process.argv[3];
+    if (!manifest) usageError("usage: seal init <manifest.tools.json> [--out <policy.json>]");
+    const args = process.argv.slice(4);
+    const outIndex = args.indexOf("--out");
+    const out = outIndex >= 0 ? args[outIndex + 1] : undefined;
+    const consumed = new Set(outIndex >= 0 ? ["--out", out] : []);
+    const unknown = args.find((arg) => !consumed.has(arg));
+    if ((outIndex >= 0 && !out) || unknown)
+      usageError("usage: seal init <manifest.tools.json> [--out <policy.json>]");
+    const { initPolicy } = require(path.join(__dirname, "../src/init.cjs"));
+    try {
+      const result = initPolicy(path.resolve(manifest), {
+        outputPath: out ? path.resolve(out) : undefined,
+      });
+      console.log(`created policy  ${result.output}`);
+      if (result.unverifiedAllows.length) {
+        console.log(`WARNING  ${result.unverifiedAllows.length} unverified suggestion(s) — server self-described readOnly:`);
+        for (const name of result.unverifiedAllows) console.log(`  ${name}`);
+      }
+      console.log("review every rule before signing; annotations are trusted input, not verification");
+      process.exit(0);
+    } catch (error) {
+      console.error(`FAIL  ${error.message}`);
+      process.exit(1);
+    }
+  }
+  if (cmd === "policy") {
+    if (process.argv[3] !== "sign" || !process.argv[4])
+      usageError("usage: seal policy sign <policy.json> --key <seed-file> [--out <trusted.json>] [--yes]");
+    const policy = process.argv[4];
+    const args = process.argv.slice(5);
+    const valueAfter = (flag) => {
+      const index = args.indexOf(flag);
+      return index >= 0 ? args[index + 1] : undefined;
+    };
+    const key = valueAfter("--key");
+    const out = valueAfter("--out");
+    const yes = args.includes("--yes");
+    const known = new Set(["--key", "--out", "--yes", key, out].filter(Boolean));
+    const unknown = args.find((arg) => !known.has(arg));
+    if (!key || unknown)
+      usageError("usage: seal policy sign <policy.json> --key <seed-file> [--out <trusted.json>] [--yes]");
+    const { preparePolicy, signPreparedPolicy } = require(path.join(__dirname, "../src/policy-sign.cjs"));
+    try {
+      const prepared = preparePolicy(path.resolve(policy));
+      const { guarded, allowUnverified, unknownGuarded } = prepared.summary;
+      const warning = `${guarded} guarded, ${allowUnverified} allow(unverified), ${unknownGuarded} unknown→guarded — sign anyway? [y/N]`;
+      console.error(`WARNING  ${warning}`);
+      if (!yes) {
+        if (!process.stdin.isTTY || !process.stderr.isTTY)
+          throw new Error("signing confirmation requires an interactive TTY; use --yes for CI after review");
+        if (!await confirm("> ")) throw new Error("signing cancelled; policy was not signed");
+      } else {
+        console.error("ACKNOWLEDGED  --yes supplied; signing the displayed policy summary");
+      }
+      const result = signPreparedPolicy(prepared, {
+        keyPath: path.resolve(key), outputPath: out ? path.resolve(out) : undefined,
+      });
+      console.log(`signed policy  ${result.output}`);
+      console.log(`  policy_hash=${result.policyHash}`);
+      console.log(`  public_key=${result.publicKey}`);
+      console.log(`  verify/run: seal-host-rs --config ${result.output} --pubkey ${result.publicKey} ...`);
+      process.exit(0);
+    } catch (error) {
+      console.error(`FAIL  ${error.message}`);
+      process.exit(1);
+    }
+  }
+  if (cmd === "connect" || cmd === "disconnect") {
+    const args = process.argv.slice(3);
+    const clientIndex = args.indexOf("--client");
+    const client = clientIndex >= 0 ? args[clientIndex + 1] : undefined;
+    const desktop = args.includes("--desktop");
+    if (client !== "claude") usageError(`usage: seal ${cmd} --client claude [--desktop]${cmd === "connect" ? " [--profile <profile.json>]" : ""}`);
+    const profileIndex = args.indexOf("--profile");
+    const profile = profileIndex >= 0 ? args[profileIndex + 1] : undefined;
+    const consumed = new Set(["--client", "claude", "--desktop"]);
+    if (profile) { consumed.add("--profile"); consumed.add(profile); }
+    const unknown = args.find((arg) => !consumed.has(arg));
+    if (unknown || (cmd === "disconnect" && profile))
+      usageError(`usage: seal ${cmd} --client claude [--desktop]${cmd === "connect" ? " [--profile <profile.json>]" : ""}`);
+    const integration = require(path.join(__dirname, "../src/connect.cjs"));
+    try {
+      const result = cmd === "connect"
+        ? integration.connect({ profilePath: path.resolve(profile), desktop })
+        : integration.disconnect({ desktop });
+      console.log(`${result.message}: ${result.label}`);
+      console.log(`  config: ${result.config}`);
+      if (result.metadata) console.log(`  rollback record: ${result.metadata}`);
+      console.log(`  rollback: seal disconnect --client claude${desktop ? " --desktop" : ""}`);
+      console.log(desktop ? "  restart: fully quit and reopen Claude Desktop" : "  verify: claude mcp list, then /mcp");
+      process.exit(0);
+    } catch (error) {
+      console.error(`FAIL  ${error.message}`);
+      process.exit(1);
+    }
   }
   if (cmd === "test") {
     let profile = "L0";

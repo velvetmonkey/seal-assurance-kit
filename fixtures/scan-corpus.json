@@ -1,0 +1,177 @@
+{
+  "items": [
+    {
+      "name": "safe-mixed",
+      "expected": true,
+      "manifest": {
+        "server": "corpus/safe",
+        "tools": [
+          { "name": "read_item", "annotations": { "readOnlyHint": true } },
+          { "name": "write_item", "annotations": { "destructiveHint": true } },
+          { "name": "delete_item", "annotations": { "destructiveHint": true } }
+        ]
+      },
+      "policy": {
+        "epoch": 1,
+        "server": "corpus/safe",
+        "safety": {
+          "approval": { "ttl_seconds": 120, "control_file": "seal-approvals.jsonl" },
+          "tools": [
+            { "name": "read_item", "mode": "allow", "target": [{ "full_arguments": true }] },
+            { "name": "write_item", "mode": "guard", "target": [{ "full_arguments": true }] },
+            { "name": "delete_item", "mode": "deny", "target": [{ "full_arguments": true }] }
+          ]
+        }
+      }
+    },
+    {
+      "name": "orphan-explicit-allow",
+      "expected": false,
+      "manifest": {
+        "server": "corpus/orphan",
+        "tools": [
+          { "name": "read_item", "annotations": { "readOnlyHint": true } }
+        ]
+      },
+      "policy": {
+        "epoch": 1,
+        "server": "corpus/orphan",
+        "safety": {
+          "approval": { "ttl_seconds": 120, "control_file": "seal-approvals.jsonl" },
+          "tools": [
+            { "name": "read_item", "mode": "allow", "target": [{ "full_arguments": true }] },
+            { "name": "missing_item", "mode": "allow", "target": [{ "full_arguments": true }] }
+          ]
+        }
+      }
+    },
+    {
+      "name": "mutating-under-allow",
+      "expected": false,
+      "manifest": {
+        "server": "corpus/unsafe",
+        "tools": [
+          { "name": "write_item", "annotations": { "destructiveHint": true } }
+        ]
+      },
+      "policy": {
+        "epoch": 1,
+        "server": "corpus/unsafe",
+        "safety": {
+          "approval": { "ttl_seconds": 120, "control_file": "seal-approvals.jsonl" },
+          "tools": [
+            { "name": "write_item", "mode": "allow", "target": [{ "full_arguments": true }] }
+          ]
+        }
+      }
+    },
+    {
+      "name": "dbhub-scaffold",
+      "expected": true,
+      "manifest": {
+        "server": "bytebase/dbhub@0.23.0",
+        "tools": [
+          { "name": "search_objects", "annotations": { "readOnlyHint": true } },
+          { "name": "execute_sql", "annotations": { "destructiveHint": true } }
+        ]
+      },
+      "policy": {
+        "epoch": 1,
+        "server": "bytebase/dbhub@0.23.0",
+        "safety": {
+          "approval": { "ttl_seconds": 120, "control_file": "seal-approvals.jsonl" },
+          "tools": [
+            { "name": "search_objects", "mode": "allow", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "readonly" }, "_comment": "unverified suggestion — server self-described readOnly" },
+            { "name": "execute_sql", "mode": "guard", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "destructive" } }
+          ]
+        }
+      }
+    },
+    {
+      "name": "filesystem-scaffold",
+      "expected": true,
+      "manifest": {
+        "server": "@modelcontextprotocol/server-filesystem@2026.7.10",
+        "tools": [
+          { "name": "read_text_file", "annotations": { "readOnlyHint": true } },
+          { "name": "read_media_file", "annotations": { "readOnlyHint": true } },
+          { "name": "read_multiple_files", "annotations": { "readOnlyHint": true } },
+          { "name": "list_directory", "annotations": { "readOnlyHint": true } },
+          { "name": "list_directory_with_sizes", "annotations": { "readOnlyHint": true } },
+          { "name": "directory_tree", "annotations": { "readOnlyHint": true } },
+          { "name": "search_files", "annotations": { "readOnlyHint": true } },
+          { "name": "get_file_info", "annotations": { "readOnlyHint": true } },
+          { "name": "list_allowed_directories", "annotations": { "readOnlyHint": true } },
+          { "name": "write_file", "annotations": { "destructiveHint": true } },
+          { "name": "edit_file", "annotations": { "destructiveHint": true } },
+          { "name": "create_directory", "annotations": { "destructiveHint": true } },
+          { "name": "move_file", "annotations": { "destructiveHint": true } }
+        ]
+      },
+      "policy": {
+        "epoch": 1,
+        "server": "@modelcontextprotocol/server-filesystem@2026.7.10",
+        "safety": {
+          "approval": { "ttl_seconds": 120, "control_file": "seal-approvals.jsonl" },
+          "tools": [
+            { "name": "read_text_file", "mode": "allow", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "readonly" }, "_comment": "unverified suggestion — server self-described readOnly" },
+            { "name": "read_media_file", "mode": "allow", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "readonly" }, "_comment": "unverified suggestion — server self-described readOnly" },
+            { "name": "read_multiple_files", "mode": "allow", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "readonly" }, "_comment": "unverified suggestion — server self-described readOnly" },
+            { "name": "list_directory", "mode": "allow", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "readonly" }, "_comment": "unverified suggestion — server self-described readOnly" },
+            { "name": "list_directory_with_sizes", "mode": "allow", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "readonly" }, "_comment": "unverified suggestion — server self-described readOnly" },
+            { "name": "directory_tree", "mode": "allow", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "readonly" }, "_comment": "unverified suggestion — server self-described readOnly" },
+            { "name": "search_files", "mode": "allow", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "readonly" }, "_comment": "unverified suggestion — server self-described readOnly" },
+            { "name": "get_file_info", "mode": "allow", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "readonly" }, "_comment": "unverified suggestion — server self-described readOnly" },
+            { "name": "list_allowed_directories", "mode": "allow", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "readonly" }, "_comment": "unverified suggestion — server self-described readOnly" },
+            { "name": "write_file", "mode": "guard", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "destructive" } },
+            { "name": "edit_file", "mode": "guard", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "destructive" } },
+            { "name": "create_directory", "mode": "guard", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "destructive" } },
+            { "name": "move_file", "mode": "guard", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "destructive" } }
+          ]
+        }
+      }
+    },
+    {
+      "name": "github-scaffold",
+      "expected": true,
+      "manifest": {
+        "server": "github/github-mcp-server@v1.0.5",
+        "tools": [
+          { "name": "get_file_contents", "annotations": { "readOnlyHint": true } },
+          { "name": "get_commit", "annotations": { "readOnlyHint": true } },
+          { "name": "search_code", "annotations": { "readOnlyHint": true } },
+          { "name": "issue_read", "annotations": { "readOnlyHint": true } },
+          { "name": "pull_request_read", "annotations": { "readOnlyHint": true } },
+          { "name": "create_branch", "annotations": { "destructiveHint": true } },
+          { "name": "create_or_update_file", "annotations": { "destructiveHint": true } },
+          { "name": "delete_file", "annotations": { "destructiveHint": true } },
+          { "name": "push_files", "annotations": { "destructiveHint": true } },
+          { "name": "create_repository", "annotations": { "destructiveHint": true } },
+          { "name": "issue_write", "annotations": { "destructiveHint": true } },
+          { "name": "pull_request_review_write", "annotations": { "destructiveHint": true } }
+        ]
+      },
+      "policy": {
+        "epoch": 1,
+        "server": "github/github-mcp-server@v1.0.5",
+        "safety": {
+          "approval": { "ttl_seconds": 120, "control_file": "seal-approvals.jsonl" },
+          "tools": [
+            { "name": "get_file_contents", "mode": "allow", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "readonly" }, "_comment": "unverified suggestion — server self-described readOnly" },
+            { "name": "get_commit", "mode": "allow", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "readonly" }, "_comment": "unverified suggestion — server self-described readOnly" },
+            { "name": "search_code", "mode": "allow", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "readonly" }, "_comment": "unverified suggestion — server self-described readOnly" },
+            { "name": "issue_read", "mode": "allow", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "readonly" }, "_comment": "unverified suggestion — server self-described readOnly" },
+            { "name": "pull_request_read", "mode": "allow", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "readonly" }, "_comment": "unverified suggestion — server self-described readOnly" },
+            { "name": "create_branch", "mode": "guard", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "destructive" } },
+            { "name": "create_or_update_file", "mode": "guard", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "destructive" } },
+            { "name": "delete_file", "mode": "guard", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "destructive" } },
+            { "name": "push_files", "mode": "guard", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "destructive" } },
+            { "name": "create_repository", "mode": "guard", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "destructive" } },
+            { "name": "issue_write", "mode": "guard", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "destructive" } },
+            { "name": "pull_request_review_write", "mode": "guard", "target": [{ "full_arguments": true }], "_seal_scaffold": { "reason": "destructive" } }
+          ]
+        }
+      }
+    }
+  ]
+}

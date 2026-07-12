@@ -39,7 +39,7 @@ const path = require("path");
 // policy_hash, and nonce/issued_at/expiry when a channel emits them) change
 // WHICH approval authorized the effect.
 const AUTH_FIELDS = [
-  "tool", "arguments", "canonical_request_sha256", "args_hash", "verdict",
+  "tool", "arguments", "canonical_request_sha256", "args_hash", "verdict", "authorization",
   "deny_kernel", "bypass", "approval", "granted_capabilities", "kernel_config",
 ];
 const AUTH_SUBFIELDS = [["kernel_identity", "wasm_sha256"]];

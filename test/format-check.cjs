@@ -56,7 +56,7 @@ function check(name, got, want) {
   const v2r = F.assembleReceiptV2({
     tool: "payments.send", arguments: payArgs, now: 1000,
     canonical_request_sha256: F.canonicalRequestSha256("payments.send", payArgs),
-    bypass: false, verdict: "ALLOW", reason: "ok", deny_kernel: null,
+    bypass: false, verdict: "ALLOW", authorization: "approval", reason: "ok", deny_kernel: null,
     amount: 40000, merchant: "supplier-77", currency: "GBP",
     approval: { approval_identity: { channel: "ed25519", key_id: "ab12cd34" },
       nonce: "f".repeat(64), issued_at: 1751900000000, expiry: 1751900120000 },

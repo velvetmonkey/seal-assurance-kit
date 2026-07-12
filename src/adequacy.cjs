@@ -129,7 +129,7 @@ function load(labelsPath) {
 function printPrelude(mode, labelsPath, doc) {
   console.log(`seal adequacy ${mode}  ${labelsPath}`);
   console.log(`  states: ${doc.states.length}   monitors: ${doc.monitors.length}`);
-  console.log("  warrant: JS finite oracle for AttentionLean.WitnessTheory.witness_computable_iff_refines; collisions by witness_separation_fails_of_char");
+  console.log("  warrant: Lean check_implies_finite_witness_computable + collision_refutes_aggregator; JS agrees on corpus C");
   console.log("  scope: finite supplied sample only; PASS is not universal adequacy over all traces");
 }
 
