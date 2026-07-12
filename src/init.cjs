@@ -56,18 +56,35 @@ function scaffoldManifest(manifest) {
   };
 }
 
-function initPolicy(manifestPath, { outputPath } = {}) {
+function initPolicy(manifestPath, { outputPath, recipe } = {}) {
   let manifest;
   try { manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")); }
   catch (error) { throw new Error(`cannot read manifest: ${error.message}`); }
-  const policy = scaffoldManifest(manifest);
+  const generated = recipe
+    ? require("./recipes.cjs").applyRecipe(manifest, recipe)
+    : { policy: scaffoldManifest(manifest), participation: null, mappings: [], notices: [] };
+  const policy = generated.policy;
   const output = outputPath || defaultOutputPath(manifestPath);
   fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
   fs.writeFileSync(output, JSON.stringify(policy, null, 2) + "\n", { mode: 0o600 });
   const unverifiedAllows = policy.safety.tools
     .filter((rule) => rule.mode === "allow")
     .map((rule) => rule.name);
-  return { output, policy, unverifiedAllows };
+  return { output, policy, unverifiedAllows, recipe, ...generated };
 }
 
-module.exports = { ALLOW_COMMENT, defaultOutputPath, initPolicy, scaffoldManifest };
+function addKernel(manifestPath, symbol, { policyPath, experimental = false } = {}) {
+  let manifest;
+  try { manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")); }
+  catch (error) { throw new Error(`cannot read manifest: ${error.message}`); }
+  scaffoldManifest(manifest);
+  const target = policyPath || defaultOutputPath(manifestPath);
+  let policy;
+  try { policy = JSON.parse(fs.readFileSync(target, "utf8")); }
+  catch (error) { throw new Error(`cannot read existing policy ${target}: ${error.message}`); }
+  const result = require("./recipes.cjs").addKernelToPolicy(policy, manifest, symbol, { experimental });
+  fs.writeFileSync(target, JSON.stringify(result.policy, null, 2) + "\n", { mode: 0o600 });
+  return { output: target, symbol: String(symbol).toUpperCase(), ...result };
+}
+
+module.exports = { ALLOW_COMMENT, addKernel, defaultOutputPath, initPolicy, scaffoldManifest };

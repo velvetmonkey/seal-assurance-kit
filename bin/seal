@@ -17,7 +17,12 @@ const HELP = [
   "",
   "  seal verify <receipt.json>    verify a decision receipt (re-derive, trust nothing)",
   "  seal init <manifest.tools.json> [--out <policy.json>]",
+  "  seal init --recipe <prod-db|deploy|token-governor|mesh> <manifest.tools.json> [--out <policy.json>]",
   "                                scaffold an exact-name reviewable policy",
+  "  seal add-kernel <S|T|C|V|L|B> <manifest.tools.json> [--policy <policy.json>]",
+  "                                add one non-vacuous kernel to an existing policy",
+  "  seal add-kernel K <manifest.tools.json> [--policy <policy.json>] --experimental",
+  "                                EXPERIMENTAL Calibration; never emitted by recipes",
   "  seal test   [--profile L0]    MCP boundary conformance oracle",
   "  seal scan   <tools> <policy>  MCP policy coverage auditor",
   "                                (FAIL + exit 1 = uncovered mutating tools found;",
@@ -75,26 +80,72 @@ async function main() {
     process.exit(ok ? 0 : 1);
   }
   if (cmd === "init") {
-    const manifest = process.argv[3];
-    if (!manifest) usageError("usage: seal init <manifest.tools.json> [--out <policy.json>]");
-    const args = process.argv.slice(4);
-    const outIndex = args.indexOf("--out");
-    const out = outIndex >= 0 ? args[outIndex + 1] : undefined;
-    const consumed = new Set(outIndex >= 0 ? ["--out", out] : []);
-    const unknown = args.find((arg) => !consumed.has(arg));
-    if ((outIndex >= 0 && !out) || unknown)
-      usageError("usage: seal init <manifest.tools.json> [--out <policy.json>]");
+    const args = process.argv.slice(3);
+    let manifest, out, recipe;
+    for (let index = 0; index < args.length; index++) {
+      const arg = args[index];
+      if (arg === "--out" || arg === "--recipe") {
+        const value = args[++index];
+        if (!value) usageError("usage: seal init [--recipe <name>] <manifest.tools.json> [--out <policy.json>]");
+        if (arg === "--out") out = value;
+        else recipe = value;
+      } else if (arg.startsWith("--") || manifest) {
+        usageError("usage: seal init [--recipe <name>] <manifest.tools.json> [--out <policy.json>]");
+      } else manifest = arg;
+    }
+    if (!manifest) usageError("usage: seal init [--recipe <name>] <manifest.tools.json> [--out <policy.json>]");
     const { initPolicy } = require(path.join(__dirname, "../src/init.cjs"));
     try {
       const result = initPolicy(path.resolve(manifest), {
         outputPath: out ? path.resolve(out) : undefined,
+        recipe,
       });
       console.log(`created policy  ${result.output}`);
+      if (recipe) {
+        const active = result.participation.active.map((entry) => entry.symbol).join(",");
+        console.log(`recipe ${recipe}  ACTIVE {${active}}  PRESENT-BUT-INACTIVE {}`);
+        for (const mapping of result.mappings)
+          console.log(`  ${mapping.notice}`);
+      }
       if (result.unverifiedAllows.length) {
         console.log(`WARNING  ${result.unverifiedAllows.length} unverified suggestion(s) — server self-described readOnly:`);
         for (const name of result.unverifiedAllows) console.log(`  ${name}`);
       }
       console.log("review every rule before signing; annotations are trusted input, not verification");
+      process.exit(0);
+    } catch (error) {
+      console.error(`FAIL  ${error.message}`);
+      process.exit(1);
+    }
+  }
+  if (cmd === "add-kernel") {
+    const symbol = process.argv[3];
+    const manifest = process.argv[4];
+    if (!symbol || !manifest)
+      usageError("usage: seal add-kernel <S|T|C|V|L|B> <manifest.tools.json> [--policy <policy.json>] [--experimental for K]");
+    const args = process.argv.slice(5);
+    let policy;
+    let experimental = false;
+    for (let index = 0; index < args.length; index++) {
+      const arg = args[index];
+      if (arg === "--policy") {
+        policy = args[++index];
+        if (!policy) usageError("--policy requires a policy path");
+      } else if (arg === "--experimental") experimental = true;
+      else usageError(`unknown argument: ${arg}`);
+    }
+    const { addKernel } = require(path.join(__dirname, "../src/init.cjs"));
+    try {
+      if (String(symbol).toUpperCase() === "K")
+        console.error("WARNING  CALIBRATION (K) IS EXPERIMENTAL and is outside every recommended recipe.");
+      const result = addKernel(path.resolve(manifest), symbol, {
+        policyPath: policy ? path.resolve(policy) : undefined,
+        experimental,
+      });
+      console.log(`updated policy  ${result.output}`);
+      console.log(`added kernel  ${result.section} (${result.symbol}) — ACTIVE`);
+      for (const notice of result.notices) console.log(`  ${notice}`);
+      console.log("review every EDIT-ME placeholder, then run seal policy sign and seal scan");
       process.exit(0);
     } catch (error) {
       console.error(`FAIL  ${error.message}`);
