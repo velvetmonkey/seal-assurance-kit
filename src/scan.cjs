@@ -9,6 +9,7 @@
 // treated as mutating (fail-safe). Exits non-zero if any mutating tool is uncovered,
 // so it drops straight into CI.
 const fs = require("fs");
+const { formatParticipation, validateTrustedConfig } = require("./trusted-config.cjs");
 
 const MUTATING_VERBS = /\b(write|delete|remove|drop|send|pay|transfer|execute|exec|run|create|insert|update|patch|put|post|issue|revoke|mint|grant|set|modify|destroy|purge|deploy|publish|approve|move|rename)\b/i;
 const READONLY_VERBS = /\b(read|get|list|query|search|fetch|show|view|describe|inspect|status|count)\b/i;
@@ -92,10 +93,23 @@ function classify(tool, policy) {
   return { bucket: "guarded", effect, guard };
 }
 
+function validateAndShowComposition(policy) {
+  const shape = validateTrustedConfig(policy);
+  if (!shape.ok) {
+    console.log("FAIL  TRUSTED CONFIG INVALID:");
+    for (const error of shape.errors) console.log(`  ${error}`);
+    return null;
+  }
+  console.log("\nEFFECTIVE KERNEL PARTICIPATION (signed payload):");
+  for (const line of formatParticipation(shape.participation)) console.log(`  ${line}`);
+  return shape.participation;
+}
+
 function scan(toolsPath, policyPath) {
   const toolDoc = readJson(toolsPath);
   const tools = toolList(toolDoc);
   const policy = readJson(policyPath);
+  if (!validateAndShowComposition(policy)) return false;
   const buckets = { guarded: [], denied: [], "allowed-ungated": [], uncovered: [], readonly: [] };
   for (const t of tools) {
     const c = classify(t, policy);
@@ -134,6 +148,7 @@ function diff(oldPath, newPath, policyPath) {
   const oldNames = new Set(toolList(readJson(oldPath)).map((t) => t.name));
   const newTools = toolList(readJson(newPath));
   const policy = readJson(policyPath);
+  if (!validateAndShowComposition(policy)) return false;
   const added = newTools.filter((t) => !oldNames.has(t.name));
   const removed = [...oldNames].filter((n) => !newTools.some((t) => t.name === n));
   console.log(`seal scan diff  ${oldPath} -> ${newPath}`);
@@ -151,4 +166,4 @@ function diff(oldPath, newPath, policyPath) {
   return newUncovered.length === 0;
 }
 
-module.exports = { scan, diff, classify };
+module.exports = { scan, diff, classify, validateAndShowComposition };

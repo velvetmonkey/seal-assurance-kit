@@ -56,7 +56,10 @@ test("CLI sign confirmation blocks N and --yes explicitly acknowledges for CI", 
   const rejected = spawnSync("script", ["-qec", command, "/dev/null"], { input: "N\n", encoding: "utf8" });
   const rejectedOutput = `${rejected.stdout || ""}${rejected.stderr || ""}`;
   assert.notEqual(rejected.status, 0, rejectedOutput);
-  assert.match(rejectedOutput, /1 guarded, 1 allow\(unverified\), 1 unknown→guarded — sign anyway\? \[y\/N\]/);
+  assert.match(rejectedOutput, /EFFECTIVE KERNEL PARTICIPATION \(signed payload\)/);
+  assert.match(rejectedOutput, /ACTIVE \(1\):[\s\S]*Safety \(S\)/);
+  assert.match(rejectedOutput, /ABSENT\/OFF \(6\):/);
+  assert.match(rejectedOutput, /1 guarded, 1 allow\(unverified\), 1 unknown→guarded — acknowledge effective participation and sign anyway\? \[y\/N\]/);
   assert.match(rejectedOutput, /signing cancelled/);
   assert.equal(fs.existsSync(out), false);
 

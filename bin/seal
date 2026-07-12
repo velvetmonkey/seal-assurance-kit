@@ -118,10 +118,13 @@ async function main() {
     if (!key || unknown)
       usageError("usage: seal policy sign <policy.json> --key <seed-file> [--out <trusted.json>] [--yes]");
     const { preparePolicy, signPreparedPolicy } = require(path.join(__dirname, "../src/policy-sign.cjs"));
+    const { formatParticipation } = require(path.join(__dirname, "../src/trusted-config.cjs"));
     try {
       const prepared = preparePolicy(path.resolve(policy));
+      console.error("EFFECTIVE KERNEL PARTICIPATION (signed payload):");
+      for (const line of formatParticipation(prepared.participation)) console.error(`  ${line}`);
       const { guarded, allowUnverified, unknownGuarded } = prepared.summary;
-      const warning = `${guarded} guarded, ${allowUnverified} allow(unverified), ${unknownGuarded} unknown→guarded — sign anyway? [y/N]`;
+      const warning = `${guarded} guarded, ${allowUnverified} allow(unverified), ${unknownGuarded} unknown→guarded — acknowledge effective participation and sign anyway? [y/N]`;
       console.error(`WARNING  ${warning}`);
       if (!yes) {
         if (!process.stdin.isTTY || !process.stderr.isTTY)
