@@ -1,5 +1,7 @@
 # seal-assurance-kit
 
+[![CI](https://github.com/velvetmonkey/seal-assurance-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/velvetmonkey/seal-assurance-kit/actions/workflows/ci.yml)
+
 **CLI that tells you the truth about your boundary in one line: PASS, FAIL, or the exact gap.**
 
 `seal verify` re-derives a receipt. `seal scan` finds unguarded tools (and exits 1). `seal test` replays the corpus. `seal adequacy` checks whether your evidence actually separates the labels. Output is boring, rerun-able, and honest.
