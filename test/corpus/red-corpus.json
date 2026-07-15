@@ -1,0 +1,126 @@
+{
+  "_about": "RED adversarial corpus — single source of truth (ARIA Part B / B1+B2+B4). Every entry is a vector that a defence must REFUSE. Each names its input, the expected refusal, the file:line of the defence, the finding that produced it, and a proof_catchable tag (B4): could a Lean theorem, in principle, have caught it? Most cannot — they live below the proof line, in the host, the channel, the parser boundary, the verifier. That tag is the Track-1/Track-2 boundary made concrete. Executable pins: js-validator entries run in test/red-corpus.test.cjs; the six-copy agreement runs in test/fleet-copy-differential.cjs, which is MANUAL and NOT run by CI (it needs all six repos side by side and the five siblings are private), so a green CI run on this repo says NOTHING about six-copy agreement; rust-host entries run in seal-host/rust/tests; verify-action entries run in seal-verify-action/test. Nothing here is a silent skip: an entry not executed by a given harness is printed as EXECUTED-ELSEWHERE with a pointer.",
+  "_schema": {
+    "id": "stable kebab id",
+    "title": "one line",
+    "finding": "the finding / brief reference that produced this vector",
+    "capability": "what the attacker must be able to do",
+    "surfaces": "which refusing surfaces this fans to",
+    "vector": "input + how to feed it (base fixture + mutation, or inline)",
+    "expected_refusal": "what every listed surface must do",
+    "defence": "repo:file:line of the check that must not silently disappear",
+    "executed_in": "the harness file(s) that assert this",
+    "proof_catchable": "{ verdict: NO|PARTLY|YES, why }"
+  },
+
+  "vectors": [
+    {
+      "id": "copy-drift-authority-trusted",
+      "title": "Receipt asserts its own trust via verifier-only field authority_trusted",
+      "finding": "Monkey 2026-07-15 21:35 — kit validator 21 lines behind five downstream copies (T5 cross-copy differential, brief B2). Fail-OPEN leg: kit accepted what the five reject.",
+      "capability": "Produce/relay a receipt object; inject a top-level authority_trusted field.",
+      "surfaces": ["js-validator (all six receipt-format.js copies)", "kit-verify (bin/seal verify -> src/verify.cjs -> validateReceipt)"],
+      "vector": { "base_fixture": "receipt-allow.json", "mutate": { "set": { "authority_trusted": true } } },
+      "expected_refusal": { "verb": "reject", "error_substring": "authority_trusted: verifier-computed only; forbidden in a receipt" },
+      "defence": "seal-assurance-kit/kernel/receipt-format.js validateReceipt (ported 2026-07-15); canonical seal-check/receipt-format.js:232-233",
+      "executed_in": "test/red-corpus.test.cjs (kit copy) + test/fleet-copy-differential.cjs (all six agree)",
+      "proof_catchable": { "verdict": "NO", "why": "The hole is file duplication: six hand-maintained JS validator copies, one behind. No theorem about seal-host's Lean kernel can observe that a downstream JS receipt-format.js fell behind — the copies are below the proof line, in verifier code the proofs never mention." }
+    },
+    {
+      "id": "signed-config-known-gap",
+      "title": "KNOWN GAP (characterization, NOT a verified-consistent claim): kit producer omits signed_config; kit validator accepts what the five reject",
+      "finding": "Monkey 2026-07-15 — copy-drift leg B. Fail-CLOSED: kit-produced mediated receipts bounce off stricter verifiers; no bad ALLOW. Deliberately NOT code-fixed pre-ARIA (fixing would require upgrading the kit signing path; risk > benefit for a fail-closed bug).",
+      "capability": "None adversarial — this pins an intentional interop divergence so it cannot be mistaken for consistency.",
+      "surfaces": ["js-validator differential (kit accepts vs five reject)"],
+      "vector": { "base_fixture": "receipt-allow.json", "mutate": {} },
+      "expected_refusal": { "verb": "characterize", "kit_accepts": true, "five_reject": true, "five_error_substring": "signed_config: object required when mediated (v2)" },
+      "defence": "seal-check/receipt-format.js:353-365 (present in five); seal-assurance-kit/kernel/receipt-format.js intentionally omits — see the KNOWN GAP comment there.",
+      "executed_in": "test/red-corpus.test.cjs (named KNOWN_GAP_kit_producer_omits_signed_config) + test/fleet-copy-differential.cjs",
+      "proof_catchable": { "verdict": "NO", "why": "Producer/validator version skew across repos; a schema-version divergence in JS verifier code, invisible to any kernel theorem." }
+    },
+    {
+      "id": "serde-unparseable-fabrication",
+      "title": "§11.1 unparseable receipt smuggling structured fields (tool/arguments) alongside a parse error",
+      "finding": "serde/Lean divergence set (brief B2: 1e309, argless calls, non-object arguments). Option-B de-parse: when serde cannot re-parse a Lean-mediated line the receipt must omit tool/arguments/args_hash/canonical_*, carrying only request_sha256 + request_parse_error. A receipt that names a parse error AND carries structured fields is fabrication.",
+      "capability": "Craft a line serde cannot re-parse but Lean mediates (e.g. numeric overflow 1e309); attempt to also present forged structured request fields.",
+      "surfaces": ["js-validator (all six)", "rust-host (receipt assembly)"],
+      "vector": { "base_fixture": "receipt-unparseable.json", "mutate": { "set": { "tool": "db.execute", "arguments": {} } } },
+      "expected_refusal": { "verb": "reject", "error_substring": "must be absent on an unparseable-request receipt" },
+      "defence": "seal-check/receipt-format.js:246-261 (JS); seal-host/rust/src/decision_receipt.rs:205-237 (host omission); pinned in seal-host/rust/tests/differential.rs:195 (1e309 serde-vs-Lean).",
+      "executed_in": "test/red-corpus.test.cjs (JS) + seal-host rust differential.rs:195 (referenced-and-run)",
+      "proof_catchable": { "verdict": "NO", "why": "The serde re-parser and Lean's classifier are two different parsers of the same bytes. Lean's theorems cover what the KERNEL judged; the divergence is a property of the host's serde_json re-derivation, a layer the proofs deliberately do not model." }
+    },
+    {
+      "id": "schema-k-hard-split",
+      "title": "Legacy Schema K (seal_check_receipt) presented as a current receipt",
+      "finding": "Hard-split ruling (seal-receipt-schema v1 day-2). A v0 seal-check receipt is NOT v1/v2-compatible and must be rejected, not silently coerced.",
+      "capability": "Present an old-format receipt to a current verifier.",
+      "surfaces": ["js-validator (all six)"],
+      "vector": { "inline": { "seal_check_receipt": "k", "verdict": "ALLOW" } },
+      "expected_refusal": { "verb": "reject", "error_substring": "legacy Schema K" },
+      "defence": "seal-check/receipt-format.js:240-241 (version discriminator hard-split).",
+      "executed_in": "test/red-corpus.test.cjs",
+      "proof_catchable": { "verdict": "NO", "why": "Schema versioning is a verifier-layer discriminator; no kernel theorem exists about receipt wire-format versions." }
+    },
+    {
+      "id": "no-version-discriminator",
+      "title": "Receipt with no recognized version discriminator",
+      "finding": "Version-discriminator-first design (fail closed on unrecognized shape).",
+      "capability": "Present an object lacking every known version key.",
+      "surfaces": ["js-validator (all six)"],
+      "vector": { "inline": { "verdict": "ALLOW", "bypass": true } },
+      "expected_refusal": { "verb": "reject", "error_substring": "no recognized version discriminator" },
+      "defence": "seal-check/receipt-format.js:243.",
+      "executed_in": "test/red-corpus.test.cjs",
+      "proof_catchable": { "verdict": "NO", "why": "Verifier-layer input validation; below the proof line." }
+    },
+    {
+      "id": "t2-forged-pairing",
+      "title": "Forge a pairing: kernel material from line A, request_sha256 from line B",
+      "finding": "Brief B2 / red-team T2. The host cross-check and the verifiers must refuse a receipt whose kernel-attested request hash does not match the host's line hash.",
+      "capability": "Compromised child / local user assembling a receipt from mismatched kernel output and request identity.",
+      "surfaces": ["rust-host (decision receipt assembly)", "verifier (kit src/verify.cjs substitution-compare)"],
+      "vector": { "description": "Kernel audit request_sha256 for line A; host line hash for line B — mismatch. Also: a crafted line whose replayed hash occurs !=1 time to misfire the substitution count guard." },
+      "expected_refusal": { "verb": "refuse pairing", "detail": "host returns Err (fails closed, nothing forwards); verifier requires the replayed hash to occur exactly once before substitution." },
+      "defence": "seal-host/rust/src/decision_receipt.rs:135-145 (host cross-check, Err on mismatch); seal-assurance-kit/src/verify.cjs:134-140 (substitution-compare, split length===2 one-shot guard).",
+      "executed_in": "Referenced-and-run: seal-host/rust/src/decision_receipt.rs::tests::forged_line_pairing_is_refused (host cross-check) + host_path.rs:784. The verifier substitution one-shot guard (verify.cjs:134-140) is DOCUMENTED here, not executably pinned this session — the load-bearing T2 defence is the host cross-check, which is pinned.",
+      "proof_catchable": { "verdict": "PARTLY", "why": "The host cross-check (kernel-attested hash == host line hash) is a checkable Lean/host property. The SIX-copy verifier agreement on the substitution-compare is not — it lives in hand-maintained JS, below the proof line." }
+    },
+    {
+      "id": "t3-terminator-gap",
+      "title": "Terminator gap: \"x\\n\" and \"x\\r\\n\" share a request commitment while the child receives different bytes",
+      "finding": "Monkey read of the kernel-request-commitment plan / red-team T3. lean_view strips the terminator before Lean judges + before request_sha256; the child is forwarded the original bytes including terminator. Believed low impact (terminator not semantic) — pin the CURRENT behaviour honestly whichever way it is called.",
+      "capability": "Send the same logical call with differing line terminators.",
+      "surfaces": ["rust-host (lean_view / forward)"],
+      "vector": { "description": "sha256(lean_view(\"x\\n\")) == sha256(lean_view(\"x\\r\\n\")) == sha256(\"x\"); forwarded bytes differ." },
+      "expected_refusal": { "verb": "pin-current-behaviour", "detail": "commitment is over the terminator-stripped lean_view; forward carries original bytes. Honest name, no silent change." },
+      "defence": "seal-host/rust/src/main.rs:330-333 (lean_view strip); forward at main.rs:601/669/792.",
+      "executed_in": "seal-host/rust/src/main.rs:855 request_commitment_is_over_the_terminator_stripped_lean_view (referenced-and-run)",
+      "proof_catchable": { "verdict": "PARTLY", "why": "Lean's golden vector covers the commitment over the view Lean judged. The gap between 'what the kernel committed to' and 'what bytes were forwarded to the child' is a host transport property the kernel theorems do not reach." }
+    },
+    {
+      "id": "t4-audit-stream-injection",
+      "title": "Audit-stream injection via unknown_decision:<value> — quote-breaking, newline forging, ANSI smuggling",
+      "finding": "Brief B2 / red-team T4. <=64 attacker-chosen chars reach stderr via unknown_decision:<value> on the unauthenticated control-file channel. Ben ruled keep-64 because json!() escaping at the emission site is the real control. Pin that the escaping holds under hostile input.",
+      "capability": "Write an approval/control record with a decision value outside {absent,allow,deny}, containing quotes/newlines/ANSI/control bytes.",
+      "surfaces": ["rust-host (approval provider + stderr audit emission)"],
+      "vector": { "description": "decision value = '\"}\\n{\"forged\":\"audit line\"' and ANSI/control-byte variants; expect a single JSON-escaped warning line, record dropped, never approved." },
+      "expected_refusal": { "verb": "drop + escape", "detail": "record dropped (never approves); reason clamped to <=64 chars; emitted inside json!() so it cannot forge a second audit line." },
+      "defence": "seal-host/rust/src/providers.rs:94-96 (<=64 clamp); seal-host/rust/src/main.rs approval_drop_line (json!() escaping at emission, called by emit_approval_drop_warnings).",
+      "executed_in": "NEW: seal-host/rust/src/main.rs::tests::approval_drop_line_escapes_hostile_reason_no_second_audit_line (escaping) + seal-host/rust/src/providers.rs::tests::unknown_decision_reason_clamps_long_hostile_value_to_64_chars (clamp under long hostile value). Referenced-and-run: providers.rs::tests::{ed25519,control_file}_provider_drops_unknown_decision_never_approves (drop/never-approve).",
+      "proof_catchable": { "verdict": "NO", "why": "stderr audit-line escaping is a host/channel serialization property. Nothing the Lean kernel proves constrains how the Rust host renders a dropped-approval warning to a log stream." }
+    },
+    {
+      "id": "vacuity-empty-every",
+      "title": "Vacuous aggregate: [].every() is true — zero replay-applicable receipts must not claim consistency",
+      "finding": "Brief B2 / already pinned in seal-verify-action; the pattern deserves a sweep. Every fleet aggregate that could be vacuously true is a candidate.",
+      "capability": "Supply an evidence set with zero replay-applicable (or zero total) receipts.",
+      "surfaces": ["verify-action (evidence aggregation)"],
+      "vector": { "description": "results=[] or replayApplicable=[]; a naive .every() would return true and claim signature/replay/authority consistency over nothing." },
+      "expected_refusal": { "verb": "refuse vacuous truth", "detail": "each aggregate ANDs a length>0 guard so an empty set yields false, never a spurious consistent verdict." },
+      "defence": "seal-verify-action/lib/main.js:106-120 (length>0 && ...every() on signatureValid, replayConsistent, authorityTrusted).",
+      "executed_in": "seal-verify-action/test/main.test.js (extended)",
+      "proof_catchable": { "verdict": "NO", "why": "Aggregate-over-empty-set semantics live in the verifier's JS. A theorem about a single receipt says nothing about how a fleet aggregator folds zero of them." }
+    }
+  ]
+}
