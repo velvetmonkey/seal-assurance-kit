@@ -11,7 +11,7 @@ const os = require("os");
 const path = require("path");
 
 const ROOT = path.resolve(__dirname, "..");
-const FILES = ["receipt-block.json", "receipt-allow.json"];
+const FILES = ["receipt-block.json", "receipt-allow.json", "receipt-crosstool.json"];
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "seal-kit-drift-"));
 let failures = 0;

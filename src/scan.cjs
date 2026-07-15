@@ -9,6 +9,7 @@
 // treated as mutating (fail-safe). Exits non-zero if any mutating tool is uncovered,
 // so it drops straight into CI.
 const fs = require("fs");
+const path = require("path");
 const { formatParticipation, validateTrustedConfig } = require("./trusted-config.cjs");
 
 const MUTATING_VERBS = /\b(write|delete|remove|drop|send|pay|transfer|execute|exec|run|create|insert|update|patch|put|post|issue|revoke|mint|grant|set|modify|destroy|purge|deploy|publish|approve|move|rename)\b/i;
@@ -139,7 +140,17 @@ function scan(toolsPath, policyPath) {
   console.log(`\n  ${failed ? "FAIL" : "PASS"}  ${nUncovered} uncovered, ${nWarn} ungated, ` +
     `${buckets.guarded.length} guarded, ${buckets.denied.length} denied, ${buckets.readonly.length} read-only`);
   if (isV2Policy(policy)) {
-    console.log("  warrant: JS scan differentially bound to Lean scan_pass_sound over corpus C (differential evidence, not universal verification); finite manifest scope; annotations + manifest completeness remain assumptions.");
+    // The warrant reads its provenance from the pin so this line can never
+    // drift from what is actually checked: JS↔pin runs on every kit test
+    // run (test/scan-pin.test.cjs); Lean↔pin runs in mcp-seal-dev CI (the
+    // scan-bridge step). If the pin is unreadable, claim NOTHING.
+    try {
+      const pin = JSON.parse(fs.readFileSync(
+        path.resolve(__dirname, "../fixtures/scan-lean-oracle.json"), "utf8"));
+      console.log(`  warrant: JS scan agrees with the pinned Lean scan_oracle verdicts (scan_pass_sound; mcp-seal-dev @${pin.provenance.commit.slice(0, 12)}, ${pin.provenance.generated}) over corpus C — JS↔pin checked on every kit test run, Lean↔pin checked in mcp-seal-dev CI; differential evidence, not universal verification; annotations + manifest completeness remain assumptions.`);
+    } catch {
+      console.log("  warrant: NONE — the pinned Lean scan-oracle output (fixtures/scan-lean-oracle.json) is unreadable, so no JS↔Lean binding is claimed. Regenerate it with `SCAN_LEAN_ROOT=<mcp-seal-dev> node scripts/scan_bridge.mjs --write-pin`.");
+    }
   }
   return !failed;
 }

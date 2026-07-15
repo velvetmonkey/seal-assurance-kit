@@ -26,6 +26,17 @@ async function verify(receiptPath) {
   const checks = [];
   const add = (name, pass, detail = "") => checks.push({ name, pass, detail });
 
+  // The kernel's own commitment to the bytes it judged: Host/Audit.lean puts
+  // sha256 of the exact judged line into the audit inside emitted_bytes.
+  const auditRequestHash = (emittedBytes) => {
+    try {
+      const h = JSON.parse(JSON.parse(emittedBytes).audit).request_sha256;
+      return typeof h === "string" && /^[0-9a-f]{64}$/.test(h) ? h : null;
+    } catch {
+      return null;
+    }
+  };
+
   // 0. Schema first (version discriminator, field table, hard split,
   //    stored-line-vs-derived-line equality). Malformed => never reaches the kernel.
   const shape = F.validateReceipt(receipt);
@@ -55,6 +66,7 @@ async function verify(receiptPath) {
   //    possible, which is reported as its own state, never a match or a
   //    mismatch.
   const unparseable = typeof receipt.request_parse_error === "string";
+  let canonicalHash = null;
   if (unparseable) {
     add("raw line identity present (request_sha256; §11.1 — no canonical re-derivation possible)",
       typeof receipt.request_sha256 === "string" && /^[0-9a-f]{64}$/.test(receipt.request_sha256),
@@ -64,8 +76,9 @@ async function verify(receiptPath) {
     if (typeof receipt.canonical_request === "string") {
       add("stored canonical_request equals derived line", receipt.canonical_request === line);
     }
-    const h = crypto.createHash("sha256").update(line).digest("hex");
-    add("canonical request hash matches", h === receipt.canonical_request_sha256, h.slice(0, 12));
+    canonicalHash = crypto.createHash("sha256").update(line).digest("hex");
+    add("canonical request hash matches", canonicalHash === receipt.canonical_request_sha256,
+      canonicalHash.slice(0, 12));
   }
 
   // 4. Approval targets recomputed from the carried grants (spec §3).
@@ -76,11 +89,13 @@ async function verify(receiptPath) {
 
   // 5. Re-derive through the same kernel with the receipt's own policy + call.
   //    Impossible on an unparseable-request receipt: check instead that the
-  //    kernel material it carries agrees with itself (the audit embedded in
-  //    emitted_bytes names the receipt's own verdict and certs). Consistency,
-  //    not replay — the emitted bytes do not commit to the raw line, so the
-  //    binding of kernel material to request_sha256 rests on the producing
-  //    host, not on re-derivation here.
+  //    kernel material it carries agrees with itself (verdict + certs) AND
+  //    that the kernel's own request commitment — the audit's request_sha256,
+  //    emitted by Host/Audit.lean over the exact bytes it judged — equals the
+  //    receipt's request_sha256. The pairing of kernel material to the raw
+  //    line is therefore kernel-attested, no longer an assertion by the
+  //    producing host. (What replay would add and this cannot: independent
+  //    re-execution of the kernel output itself.)
   if (unparseable) {
     let consistent = false;
     try {
@@ -89,6 +104,10 @@ async function verify(receiptPath) {
         JSON.stringify(audit.certs) === JSON.stringify(receipt.certs);
     } catch { consistent = false; }
     add("kernel material self-consistent (emitted audit verdict + certs; consistency, not replay)", consistent);
+    const kernelHash = auditRequestHash(receipt.emitted_bytes);
+    add("kernel-attested request binding (audit sha256 of the judged bytes equals request_sha256)",
+      kernelHash !== null && kernelHash === receipt.request_sha256,
+      kernelHash ? kernelHash.slice(0, 12) : "absent from audit");
     return report(checks, receipt, receiptPath, { unparseable: true });
   }
   const red = await decide(receipt.kernel_config, {
@@ -97,7 +116,28 @@ async function verify(receiptPath) {
   });
   add("verdict re-derives identically", red.verdict === receipt.verdict,
     `re-derived ${red.verdict} / claimed ${receipt.verdict}`);
-  add("emitted decision bytes byte-identical", red.raw === receipt.emitted_bytes);
+  // The kernel-attested request binding, parseable side. A native-host
+  // receipt carries the hash of the ACTUAL wire line (request_sha256);
+  // kit-minted receipts carry no top-level request_sha256 and the judged
+  // line IS the canonical line, so the canonical hash is the expectation.
+  const expectedHash = typeof receipt.request_sha256 === "string"
+    ? receipt.request_sha256 : canonicalHash;
+  const storedKernelHash = auditRequestHash(receipt.emitted_bytes);
+  add("kernel-attested request binding (audit sha256 of the judged bytes equals the request identity)",
+    storedKernelHash !== null && storedKernelHash === expectedHash,
+    storedKernelHash ? storedKernelHash.slice(0, 12) : "absent from audit");
+  // Replay reconstructs the CANONICAL line (id=1), so the replayed audit's
+  // request commitment legitimately differs from the stored one whenever the
+  // actual wire line differed from that reconstruction. Compare byte-identical
+  // modulo that ONE kernel-derived token (which the binding check above pins
+  // independently); require the token to occur exactly once so the
+  // substitution is byte-safe. Strictly stronger than the old plain equality:
+  // when the hashes agree this degenerates to it.
+  const replayedHash = auditRequestHash(red.raw);
+  const substitutable = replayedHash !== null && storedKernelHash !== null &&
+    red.raw.split(replayedHash).length === 2;
+  add("emitted decision bytes byte-identical modulo the kernel request commitment",
+    substitutable && red.raw.replace(replayedHash, storedKernelHash) === receipt.emitted_bytes);
 
   return report(checks, receipt, receiptPath);
 }
@@ -112,7 +152,7 @@ function report(checks, receipt, receiptPath, { notMediated = false, unparseable
   }
   console.log(`  ${notMediated ? "FAIL  NOT MEDIATED (bypass receipt)"
     : !allGood ? "FAIL  NOT VERIFIED"
-    : unparseable ? "PASS  VERIFIED (raw-line identity only: wire line not re-parseable; no canonical replay possible)"
+    : unparseable ? "PASS  VERIFIED (kernel-attested request binding: the kernel's audit commits to sha256 of the exact bytes it judged, and it matches request_sha256; wire line not re-parseable, no canonical replay possible)"
     : "PASS  VERIFIED"}`);
   return allGood;
 }

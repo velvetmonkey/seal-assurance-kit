@@ -1,0 +1,18 @@
+{
+  "provenance": {
+    "repo": "velvetmonkey/mcp-seal-dev",
+    "commit": "28491ccddbdd8727ddda9ab67e34cf4eb8add919",
+    "toolchain": "leanprover/lean4:v4.28.0",
+    "generated": "2026-07-15",
+    "command": "lake exe scan_oracle <kit>/fixtures/scan-corpus.json",
+    "note": "Pinned output of the Lean scan oracle (scanPass, covered by scan_pass_sound) over corpus C. Regenerate ONLY via `SCAN_LEAN_ROOT=<mcp-seal-dev> node scripts/scan_bridge.mjs --write-pin`. Guards: test/scan-pin.test.cjs (JS vs pin, every kit test run), the scan-bridge step in mcp-seal-dev CI (Lean vs pin, every mcp-seal-dev run), and the bridge's pin-freshness assertion on any manual run."
+  },
+  "rows": [
+    { "name": "safe-mixed", "scanPass": true },
+    { "name": "orphan-explicit-allow", "scanPass": false },
+    { "name": "mutating-under-allow", "scanPass": false },
+    { "name": "dbhub-scaffold", "scanPass": true },
+    { "name": "filesystem-scaffold", "scanPass": true },
+    { "name": "github-scaffold", "scanPass": true }
+  ]
+}

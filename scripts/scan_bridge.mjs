@@ -76,6 +76,46 @@ if (leanResults.size !== items.length) {
   process.exit(1);
 }
 
+// Pin leg: the checked-in fixtures/scan-lean-oracle.json is the shared
+// intermediate of the two automated differential halves (kit CI: JS↔pin;
+// mcp-seal-dev CI: this bridge, Lean↔pin). A live run that disagrees with
+// the pin means the pin is STALE — regenerate with --write-pin, which also
+// stamps provenance (mcp-seal-dev commit + date). Never edit the pin by hand.
+const PIN_PATH = join(ROOT, "fixtures", "scan-lean-oracle.json");
+if (process.argv.includes("--write-pin")) {
+  const commit = run("git", ["rev-parse", "HEAD"], SCAN_LEAN_ROOT).stdout.trim();
+  const toolchain = readFileSync(join(resolve(SCAN_LEAN_ROOT), "lean-toolchain"), "utf8").trim();
+  const pin = {
+    provenance: {
+      repo: "velvetmonkey/mcp-seal-dev",
+      commit,
+      toolchain,
+      generated: new Date().toISOString().slice(0, 10),
+      command: "lake exe scan_oracle <kit>/fixtures/scan-corpus.json",
+      note: "Pinned output of the Lean scan oracle (scanPass, covered by scan_pass_sound) over corpus C. Regenerate ONLY via `SCAN_LEAN_ROOT=<mcp-seal-dev> node scripts/scan_bridge.mjs --write-pin`. Guards: test/scan-pin.test.cjs (JS vs pin, every kit test run), the scan-bridge step in mcp-seal-dev CI (Lean vs pin, every mcp-seal-dev run), and the bridge's pin-freshness assertion on any manual run.",
+    },
+    rows: items.map((item) => ({ name: item.name, scanPass: leanResults.get(item.name) })),
+  };
+  writeFileSync(PIN_PATH, JSON.stringify(pin, null, 2) + "\n");
+  console.log(`pin written: ${PIN_PATH} (mcp-seal-dev @ ${commit.slice(0, 12)})`);
+} else {
+  let pin;
+  try {
+    pin = JSON.parse(readFileSync(PIN_PATH, "utf8"));
+  } catch (error) {
+    fail(`pin unreadable (${error.message}) — regenerate with --write-pin`);
+  }
+  if (pin) {
+    const pinned = new Map(pin.rows.map((r) => [r.name, r.scanPass]));
+    for (const item of items) {
+      if (pinned.get(item.name) !== leanResults.get(item.name))
+        fail(`${item.name}: pin=${pinned.get(item.name)} live Lean=${leanResults.get(item.name)} — pin STALE; regenerate with --write-pin`);
+    }
+    if (pin.rows.length !== items.length)
+      fail(`pin covers ${pin.rows.length}/${items.length} corpus items — pin STALE; regenerate with --write-pin`);
+  }
+}
+
 const work = mkdtempSync(join(tmpdir(), "seal-scan-bridge-"));
 try {
   for (const item of items) {
