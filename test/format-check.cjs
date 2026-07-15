@@ -102,6 +102,80 @@ function check(name, got, want) {
   check("cross-tool fixture (seal-check-produced) validates as v2",
     JSON.stringify([v.ok, v.version]), JSON.stringify([true, "v2"]));
 
+  // --- unparseable-request fixture: REAL seal-host receipt (§11.1) -----------
+  // Produced by seal-host main @ 3a74dbf on the pinned 1e309 line
+  // (test/host_path.rs:722 form). Not hand-written; not regenerable by this
+  // kit's producer — its provenance is the host, recorded in the commit that
+  // added it.
+  const unpFx = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "fixtures", "receipt-unparseable.json"), "utf8"));
+  v = F.validateReceipt(unpFx);
+  check("unparseable fixture (seal-host-produced) validates as v2",
+    JSON.stringify([v.ok, v.version, v.errors]), JSON.stringify([true, "v2", []]));
+  check("unparseable fixture carries the raw line identity and parse error",
+    /^[0-9a-f]{64}$/.test(unpFx.request_sha256) && typeof unpFx.request_parse_error === "string", true);
+  check("unparseable fixture omits every structured request field",
+    ["tool", "arguments", "args_hash", "canonical_request", "canonical_request_sha256"]
+      .every((k) => !(k in unpFx)), true);
+
+  // --- §11.1/§11.5 unparseable-request rule: assembly ------------------------
+  // seal-host (main @ 3a74dbf) emits request_sha256 on every native receipt and
+  // request_parse_error when serde could not re-parse the wire line the kernel
+  // judged; on those lines the structured request fields are absent and
+  // request_sha256 is the ONLY request identity. The assembler must not drop it.
+  const unpAsm = F.assembleReceiptV2({
+    now: 1000,
+    request_sha256: "c".repeat(64),
+    request_parse_error: "cannot parse mediated request for receipt: number out of range at line 1 column 145",
+    bypass: false, verdict: "BLOCK", reason: "safety kernel: cert", deny_kernel: "safety",
+    certs: [], emitted_bytes: "{}",
+    kernel_identity: { wasm_sha256: "0".repeat(64), self_verified: true },
+    kernel_config: PAYCFG, granted_capabilities: [],
+  });
+  check("assembleReceiptV2 preserves request_sha256 + request_parse_error (§11.5)",
+    JSON.stringify(Object.keys(unpAsm)),
+    JSON.stringify(["seal_receipt", "now", "request_sha256", "request_parse_error", "bypass",
+      "verdict", "reason", "deny_kernel", "certs", "emitted_bytes", "kernel_identity",
+      "kernel_config", "granted_capabilities"]));
+  check("unparseable-request roundtrip byte-identical",
+    JSON.stringify(F.assembleReceiptV2(JSON.parse(JSON.stringify(unpAsm)))), JSON.stringify(unpAsm));
+  const withBoth = F.assembleReceiptV2({ ...v2r, request_sha256: "c".repeat(64) });
+  check("request_sha256 sits between canonical_request_sha256 and bypass (§11.5 order)",
+    JSON.stringify(Object.keys(withBoth).slice(
+      Object.keys(withBoth).indexOf("canonical_request_sha256"),
+      Object.keys(withBoth).indexOf("bypass") + 1)),
+    JSON.stringify(["canonical_request_sha256", "request_sha256", "bypass"]));
+
+  // --- §11.1/§11.2 unparseable-request rule: validation ----------------------
+  // "iff parsed": a receipt naming request_parse_error is well-formed exactly
+  // when the structured request fields are ABSENT — rejecting it would restore
+  // to the verifier the veto the producer was deliberately stripped of, and a
+  // producer naming a parse error while supplying structured fields is
+  // fabricating.
+  rv = F.validateReceipt(unpAsm);
+  check("unparseable-request receipt validates clean (§11.2)",
+    JSON.stringify([rv.ok, rv.version, rv.errors]), JSON.stringify([true, "v2", []]));
+  for (const [k, vv] of [["tool", "payments.send"], ["arguments", {}],
+    ["args_hash", "0".repeat(64)], ["canonical_request", "{}"],
+    ["canonical_request_sha256", "0".repeat(64)]]) {
+    rv = F.validateReceipt({ ...unpAsm, [k]: vv });
+    check(`unparseable + ${k} rejected (fabrication)`, rv.ok, false);
+  }
+  rv = F.validateReceipt({ ...unpAsm, request_sha256: "nothex" });
+  check("unparseable non-hex request_sha256 rejected", rv.ok, false);
+  const noRaw = { ...unpAsm }; delete noRaw.request_sha256;
+  rv = F.validateReceipt(noRaw);
+  check("unparseable without request_sha256 rejected", rv.ok, false);
+  rv = F.validateReceipt({ ...unpAsm, request_parse_error: "" });
+  check("empty request_parse_error rejected", rv.ok, false);
+  rv = F.validateReceipt({ ...unpAsm, bypass: true });
+  check("bypass + request_parse_error rejected (mediated receipts only)",
+    rv.errors.some((e) => e.includes("only a mediated receipt")), true);
+  rv = F.validateReceipt({ ...v2r, request_sha256: "c".repeat(64) });
+  check("normal mediated receipt may carry request_sha256",
+    JSON.stringify([rv.ok, rv.errors]), JSON.stringify([true, []]));
+  rv = F.validateReceipt({ ...v2r, request_sha256: "nothex" });
+  check("normal receipt non-hex request_sha256 rejected", rv.ok, false);
+
   console.log(failures === 0 ? "\nALL VECTORS PASS" : `\n${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);
 })().catch((e) => { console.error("ERR", e); process.exit(1); });

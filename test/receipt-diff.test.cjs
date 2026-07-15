@@ -133,3 +133,30 @@ test("bin alias seal-receipt-diff works", () => {
   const out = execFileSync(process.execPath, [path.join(ROOT, "bin", "seal-receipt-diff"), FIX("receipt-allow.json"), FIX("receipt-allow.json")], { encoding: "utf8" });
   assert.match(out, /no authorization-surface drift/);
 });
+
+test("unparseable-request receipts diff by raw line identity, never a false 'tampered' (§11.1)", async () => {
+  const base = {
+    seal_receipt: "v2", now: 1000,
+    request_sha256: "c".repeat(64),
+    request_parse_error: "cannot parse mediated request for receipt: number out of range at line 1 column 145",
+    bypass: false, verdict: "BLOCK", reason: "safety kernel: cert", deny_kernel: "safety",
+    certs: [], emitted_bytes: "{}",
+    kernel_identity: { wasm_sha256: "0".repeat(64), self_verified: true },
+    kernel_config: { epoch: 1 }, granted_capabilities: [],
+  };
+  // identical unparseable receipts: clean, exit 0 — the integrity gate must not
+  // brand the honestly-absent canonical fields as "stale or tampered"
+  const p1 = write("unp-a.json", base);
+  let res = run([p1, p1]);
+  assert.equal(res.code, 0, res.out);
+  assert.match(res.out, /no authorization-surface drift/);
+  // different raw lines: authorization drift on the request identity, exit 1
+  const p2 = write("unp-b.json", { ...base, request_sha256: "d".repeat(64) });
+  res = run([p1, p2]);
+  assert.equal(res.code, 1, res.out);
+  assert.match(res.out, /raw line sha256/);
+  // mixed parseable/unparseable pair: distinct identity domains, no crash
+  res = run([FIX("receipt-allow.json"), p1]);
+  assert.equal(res.code, 1, res.out);
+  assert.match(res.out, /unparseable-request/);
+});
