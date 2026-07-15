@@ -90,6 +90,11 @@ function loadReceipt(F, file) {
 // integrity findings; empty = clean.
 function integrityFindings(F, r) {
   const out = [];
+  // §11.1 unparseable-request receipt (seal-host main @ 3a74dbf): tool and
+  // arguments are honestly absent, so there is nothing to re-derive here —
+  // that is well-formed, not an integrity failure. validateReceipt already
+  // enforced the shape (request_sha256 present, structured fields absent).
+  if (typeof r.receipt.request_parse_error === "string") return out;
   if (typeof r.receipt.tool !== "string" || typeof r.receipt.arguments !== "object" || r.receipt.arguments === null) {
     out.push("tool/arguments missing — cannot re-derive the canonical request");
     return out;
@@ -125,11 +130,21 @@ function diffReceipts(F, A, B) {
   const minor = [];
   const push = (list, field, a, b, note) => list.push({ field, a, b, ...(note ? { note } : {}) });
 
-  const lineA = F.canonicalRequest(A.receipt.tool, A.receipt.arguments);
-  const lineB = F.canonicalRequest(B.receipt.tool, B.receipt.arguments);
+  // §11.1: an unparseable-request receipt has no canonical identity — its
+  // request identity is request_sha256 over the raw wire line.
+  const unpA = typeof A.receipt.request_parse_error === "string";
+  const unpB = typeof B.receipt.request_parse_error === "string";
+  const lineA = unpA ? null : F.canonicalRequest(A.receipt.tool, A.receipt.arguments);
+  const lineB = unpB ? null : F.canonicalRequest(B.receipt.tool, B.receipt.arguments);
 
   for (const f of AUTH_FIELDS) {
     const a = A.receipt[f], b = B.receipt[f];
+    if (f === "arguments" && (unpA || unpB)) {
+      if (unpA !== unpB)
+        push(auth, "arguments", a, b,
+          "one receipt is unparseable-request (§11.1) and carries no arguments; compare raw line identities");
+      continue;
+    }
     if (f === "arguments") {
       if (lineA === lineB) continue;
       const ka = Object.keys(a), kb = Object.keys(b);
@@ -146,10 +161,13 @@ function diffReceipts(F, A, B) {
       continue;
     }
     if (f === "canonical_request_sha256") {
-      // compare the DERIVED hashes (integrity already pinned stored == derived)
-      const da = F.canonicalRequestSha256(A.receipt.tool, A.receipt.arguments);
-      const db = F.canonicalRequestSha256(B.receipt.tool, B.receipt.arguments);
-      if (da !== db) push(auth, f, da, db, "derived from each receipt's own (tool, arguments)");
+      // compare the DERIVED hashes (integrity already pinned stored == derived);
+      // for an unparseable-request receipt the identity is the raw line hash.
+      const da = unpA ? "raw:" + A.receipt.request_sha256 : F.canonicalRequestSha256(A.receipt.tool, A.receipt.arguments);
+      const db = unpB ? "raw:" + B.receipt.request_sha256 : F.canonicalRequestSha256(B.receipt.tool, B.receipt.arguments);
+      if (da !== db) push(auth, f, da, db, unpA || unpB
+        ? "request identity (raw line sha256 for unparseable-request receipts, §11.1; derived canonical hash otherwise)"
+        : "derived from each receipt's own (tool, arguments)");
       continue;
     }
     if (f === "granted_capabilities") {

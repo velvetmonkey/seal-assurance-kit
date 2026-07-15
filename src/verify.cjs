@@ -48,13 +48,25 @@ async function verify(receiptPath) {
 
   // 3. Canonical request: derived from the SAME (tool, arguments) fed to the
   //    kernel below (spec §2/§7 — never hash one stored string and re-derive
-  //    from another field).
-  const line = F.canonicalRequest(receipt.tool, receipt.arguments);
-  if (typeof receipt.canonical_request === "string") {
-    add("stored canonical_request equals derived line", receipt.canonical_request === line);
+  //    from another field). §11.1 unparseable-request receipts (seal-host main
+  //    @ 3a74dbf) carry no (tool, arguments): the kernel judged a wire line
+  //    the receipt layer could not re-parse, and request_sha256 over the raw
+  //    line is the only request identity — no canonical re-derivation is
+  //    possible, which is reported as its own state, never a match or a
+  //    mismatch.
+  const unparseable = typeof receipt.request_parse_error === "string";
+  if (unparseable) {
+    add("raw line identity present (request_sha256; §11.1 — no canonical re-derivation possible)",
+      typeof receipt.request_sha256 === "string" && /^[0-9a-f]{64}$/.test(receipt.request_sha256),
+      String(receipt.request_sha256).slice(0, 12));
+  } else {
+    const line = F.canonicalRequest(receipt.tool, receipt.arguments);
+    if (typeof receipt.canonical_request === "string") {
+      add("stored canonical_request equals derived line", receipt.canonical_request === line);
+    }
+    const h = crypto.createHash("sha256").update(line).digest("hex");
+    add("canonical request hash matches", h === receipt.canonical_request_sha256, h.slice(0, 12));
   }
-  const h = crypto.createHash("sha256").update(line).digest("hex");
-  add("canonical request hash matches", h === receipt.canonical_request_sha256, h.slice(0, 12));
 
   // 4. Approval targets recomputed from the carried grants (spec §3).
   const grants = F.capabilityTargetsFromPolicy(receipt.kernel_config, receipt.granted_capabilities);
@@ -63,6 +75,22 @@ async function verify(receiptPath) {
   if (grants.errors.length > 0) return report(checks, receipt, receiptPath);
 
   // 5. Re-derive through the same kernel with the receipt's own policy + call.
+  //    Impossible on an unparseable-request receipt: check instead that the
+  //    kernel material it carries agrees with itself (the audit embedded in
+  //    emitted_bytes names the receipt's own verdict and certs). Consistency,
+  //    not replay — the emitted bytes do not commit to the raw line, so the
+  //    binding of kernel material to request_sha256 rests on the producing
+  //    host, not on re-derivation here.
+  if (unparseable) {
+    let consistent = false;
+    try {
+      const audit = JSON.parse(JSON.parse(receipt.emitted_bytes).audit);
+      consistent = F.HOST_AUDIT_VERDICT_MAP[audit.verdict] === receipt.verdict &&
+        JSON.stringify(audit.certs) === JSON.stringify(receipt.certs);
+    } catch { consistent = false; }
+    add("kernel material self-consistent (emitted audit verdict + certs; consistency, not replay)", consistent);
+    return report(checks, receipt, receiptPath, { unparseable: true });
+  }
   const red = await decide(receipt.kernel_config, {
     tool: receipt.tool, args: receipt.arguments, approvals: grants.approvals,
     now: receipt.now ?? 1000,
@@ -74,7 +102,7 @@ async function verify(receiptPath) {
   return report(checks, receipt, receiptPath);
 }
 
-function report(checks, receipt, receiptPath, { notMediated = false } = {}) {
+function report(checks, receipt, receiptPath, { notMediated = false, unparseable = false } = {}) {
   const allGood = checks.every((c) => c.pass);
   console.log(`seal verify  ${receiptPath}`);
   const kid = (receipt.kernel_identity || {}).wasm_sha256;
@@ -82,7 +110,10 @@ function report(checks, receipt, receiptPath, { notMediated = false } = {}) {
   for (const c of checks) {
     console.log(`  ${c.pass ? "PASS" : "FAIL"}  ${c.name}${c.detail ? "   (" + c.detail + ")" : ""}`);
   }
-  console.log(`  ${notMediated ? "FAIL  NOT MEDIATED (bypass receipt)" : allGood ? "PASS  VERIFIED" : "FAIL  NOT VERIFIED"}`);
+  console.log(`  ${notMediated ? "FAIL  NOT MEDIATED (bypass receipt)"
+    : !allGood ? "FAIL  NOT VERIFIED"
+    : unparseable ? "PASS  VERIFIED (raw-line identity only: wire line not re-parseable; no canonical replay possible)"
+    : "PASS  VERIFIED"}`);
   return allGood;
 }
 
