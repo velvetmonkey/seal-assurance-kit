@@ -226,6 +226,20 @@ const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 export function validateReceipt(r) {
   const errors = [];
   if (!isObj(r)) return { ok: false, version: null, errors: ["receipt is not an object"] };
+  // `authority_trusted` is verifier-COMPUTED, never receipt-carried: a receipt
+  // that asserts its own trust is fabrication. The five downstream copies of
+  // this file forbid it; this reference copy had fallen behind and accepted it
+  // (a fail-OPEN divergence). Ported to close that gap.
+  //
+  // KNOWN GAP, intentional: the `signed_config` mediated-object requirement the
+  // downstream copies also enforce is NOT ported here — this reference kernel
+  // path emits no signed_config (grep: none in bin/ src/ kernel/), so requiring
+  // it would make this validator reject its own producer's output. That
+  // divergence is fail-CLOSED (kit receipts bounce off stricter verifiers, no
+  // bad ALLOW) and is pinned as a named characterization test, not silenced.
+  // See test/red-corpus.test.cjs and test/corpus/red-corpus.json (id copy-drift).
+  if ("authority_trusted" in r)
+    errors.push("authority_trusted: verifier-computed only; forbidden in a receipt");
 
   let version = null;
   if (r.seal_receipt === RECEIPT_SCHEMA_VERSION_V2) version = "v2";
