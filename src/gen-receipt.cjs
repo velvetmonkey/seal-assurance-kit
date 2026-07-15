@@ -29,6 +29,11 @@ async function makeReceipt(config, call) {
       approvals: [cfg.stableHash(["store.update", "store"])] });
   fs.writeFileSync(path.join(outDir, "receipt-block.json"), JSON.stringify(block, null, 2) + "\n");
   fs.writeFileSync(path.join(outDir, "receipt-allow.json"), JSON.stringify(allow, null, 2) + "\n");
-  console.log(`wrote fixtures: block=${block.verdict}  allow=${allow.verdict}`);
+  // The crosstool fixture is a byte-copy of the allow receipt (same as
+  // seal-verify-action's gen-fixtures.cjs): the cross-tool test presents an
+  // authentic receipt for a DIFFERENT call. Before this line the file had no
+  // producer and re-pins re-derived it by hand.
+  fs.writeFileSync(path.join(outDir, "receipt-crosstool.json"), JSON.stringify(allow, null, 2) + "\n");
+  console.log(`wrote fixtures: block=${block.verdict}  allow=${allow.verdict}  crosstool=${allow.verdict}`);
   process.exit(0);
 })().catch((e) => { console.error("ERR", e.message); process.exit(1); });
