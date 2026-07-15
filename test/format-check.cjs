@@ -102,6 +102,21 @@ function check(name, got, want) {
   check("cross-tool fixture (seal-check-produced) validates as v2",
     JSON.stringify([v.ok, v.version]), JSON.stringify([true, "v2"]));
 
+  // --- unparseable-request fixture: REAL seal-host receipt (§11.1) -----------
+  // Produced by seal-host main @ 3a74dbf on the pinned 1e309 line
+  // (test/host_path.rs:722 form). Not hand-written; not regenerable by this
+  // kit's producer — its provenance is the host, recorded in the commit that
+  // added it.
+  const unpFx = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "fixtures", "receipt-unparseable.json"), "utf8"));
+  v = F.validateReceipt(unpFx);
+  check("unparseable fixture (seal-host-produced) validates as v2",
+    JSON.stringify([v.ok, v.version, v.errors]), JSON.stringify([true, "v2", []]));
+  check("unparseable fixture carries the raw line identity and parse error",
+    /^[0-9a-f]{64}$/.test(unpFx.request_sha256) && typeof unpFx.request_parse_error === "string", true);
+  check("unparseable fixture omits every structured request field",
+    ["tool", "arguments", "args_hash", "canonical_request", "canonical_request_sha256"]
+      .every((k) => !(k in unpFx)), true);
+
   // --- §11.1/§11.5 unparseable-request rule: assembly ------------------------
   // seal-host (main @ 3a74dbf) emits request_sha256 on every native receipt and
   // request_parse_error when serde could not re-parse the wire line the kernel
