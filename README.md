@@ -6,7 +6,7 @@
 
 ## Quick start: first PASS
 
-**Luxury 30-second showcase — the family's fastest PASS**
+**30-second showcase — the family's fastest PASS**
 
 No Lean toolchain, no Docker, no build, no network, zero npm dependencies: just Node and this repo. This is the family front door — the quickest way to watch a real receipt re-derive to `PASS VERIFIED` before you touch anything heavier.
 
