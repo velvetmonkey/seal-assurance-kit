@@ -45,6 +45,32 @@ is the tool working, not breaking.
    read/get/list/…).
 4. Unknown → **mutating** (fail-safe: unknown effects must be covered).
 
+## 1b. TrustedConfig — the 7-kernel bundle (`seal policy sign`)
+
+`seal policy sign` validates and signs the policy-v2 TrustedConfig the verified
+kernel loads (`Seal.parsePolicyBundle`, mcp-seal-dev `Seal/PolicyBundle.lean`;
+narrative: seal-host `docs/POLICY-V2.md` §"The 7-kernel bundle"). Top-level keys:
+`epoch` (integer ≥ 1), optional `server`, required `safety`, and one optional
+declarative section per non-Safety kernel: `temporal`, `consensus`,
+`convergence`, `calibration`, `linear`, `budget`.
+
+- Every optional section accepts `enabled` (boolean). Default `true` —
+  except `calibration`, which defaults to **`false`** (EXPERIMENTAL, opt-in
+  twice). `safety` accepts **no** `enabled` key: Safety is never off.
+- `enabled: false` collapses consensus/convergence/linear/budget to absent
+  (kernel unregistered); temporal stays registered but vacuous; calibration's
+  present-but-disabled state is distinct and pinned.
+- **Unknown keys are hard errors** at section and entry level, mirroring the
+  kernel parser — the signer refuses to sign what the kernel will refuse to
+  load. This includes `_comment`: review markers may live only inside a safety
+  rule's interior (rule-level strictness is a named follow-up). `seal init`
+  recipes place their EDIT-ME markers there for this reason.
+- `safety.approval` keys: `control_file`, `ttl_seconds`, `replay_store` (the
+  host-layer replay-store pointer).
+
+The validated participation report (ACTIVE / PRESENT-BUT-INACTIVE / ABSENT)
+is printed before signing; see `seal policy sign --help`.
+
 ## 2. Tool catalogue (`seal scan`, first argument)
 
 Either a bare array of tools or an object with a `tools` array — the shape MCP

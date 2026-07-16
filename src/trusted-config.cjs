@@ -56,6 +56,28 @@ function requireStringArray(value, where, errors) {
   return true;
 }
 
+// Mirrors Seal.JsonUtil.expectObjKeys (mcp-seal-dev Seal/PolicyBundle.lean): the
+// verified parser hard-errors on unknown keys at section and entry level, so the
+// signer must refuse to sign what the kernel will refuse to load.
+function checkKeys(object, allowed, where, errors) {
+  for (const key of Object.keys(object)) {
+    if (!allowed.includes(key))
+      errors.push(`${where}: unknown key ${JSON.stringify(key)} (kernel parsePolicyBundle rejects it; allowed: ${allowed.join(", ")})`);
+  }
+}
+
+// Per-section `enabled` (PolicyBundle parseEnabled): optional boolean; default is
+// true for temporal/consensus/convergence/linear/budget, false for calibration
+// (EXPERIMENTAL, opt-in twice). Safety accepts no `enabled` key at all.
+function validateEnabled(section, where, errors) {
+  if (has(section, "enabled") && typeof section.enabled !== "boolean")
+    errors.push(`${where}.enabled: boolean when present`);
+}
+
+function sectionEnabled(section, defaultValue) {
+  return has(section, "enabled") ? section.enabled === true : defaultValue;
+}
+
 function validateMatch(match, where, errors) {
   if (!isObject(match) || typeof match.type !== "string") {
     errors.push(`${where}: match object with type required`);
@@ -109,6 +131,9 @@ function validateTarget(target, where, errors) {
 function validateSafety(config, errors) {
   const safety = config.safety;
   if (!requireObject(safety, "safety", errors)) return;
+  // safetyShallowKeys: no `enabled` here — Safety is never off by design
+  // (safety_always_registered); the kernel hard-errors on the key.
+  checkKeys(safety, ["approval", "tools", "server"], "safety", errors);
   if (has(safety, "server") && typeof safety.server !== "string")
     errors.push("safety.server: string when present");
   if (typeof config.server === "string" && typeof safety.server === "string" && config.server !== safety.server)
@@ -116,8 +141,18 @@ function validateSafety(config, errors) {
 
   const approval = safety.approval;
   if (requireObject(approval, "safety.approval", errors)) {
+    // approvalKeys allowlist; replay_store is the host-layer replay-store pointer
+    // (rust/src/main.rs replay_store_path_from_envelope: null, or an object with
+    // a non-empty sqlite_path string — the kernel allowlists the key untyped).
+    checkKeys(approval, ["control_file", "ttl_seconds", "replay_store"], "safety.approval", errors);
     requireString(approval.control_file, "safety.approval.control_file", errors);
     if (has(approval, "ttl_seconds")) requireNat(approval.ttl_seconds, "safety.approval.ttl_seconds", errors);
+    if (has(approval, "replay_store") && approval.replay_store !== null) {
+      if (!isObject(approval.replay_store)
+          || typeof approval.replay_store.sqlite_path !== "string"
+          || !approval.replay_store.sqlite_path)
+        errors.push("safety.approval.replay_store: null or object with non-empty sqlite_path string required (host contract)");
+    }
   }
 
   if (!Array.isArray(safety.tools)) {
@@ -139,6 +174,8 @@ function validateSafety(config, errors) {
 
 function validateTemporal(section, errors) {
   if (!requireObject(section, "temporal", errors)) return;
+  checkKeys(section, ["enabled", "policies"], "temporal", errors);
+  validateEnabled(section, "temporal", errors);
   if (!Array.isArray(section.policies)) {
     errors.push("temporal.policies: array required");
     return;
@@ -146,6 +183,7 @@ function validateTemporal(section, errors) {
   section.policies.forEach((policy, index) => {
     const where = `temporal.policies[${index}]`;
     if (!requireObject(policy, where, errors)) return;
+    checkKeys(policy, ["name", "type", "trigger", "forbidden"], where, errors);
     requireString(policy.name, `${where}.name`, errors);
     if (typeof policy.type !== "string") errors.push(`${where}.type: string required`);
     else if (policy.type !== "no_after") errors.push(`${where}.type: unsupported temporal policy type ${JSON.stringify(policy.type)}`);
@@ -156,6 +194,8 @@ function validateTemporal(section, errors) {
 
 function validateConsensus(section, errors) {
   if (!requireObject(section, "consensus", errors)) return;
+  checkKeys(section, ["enabled", "roster", "votes_file", "high_stakes"], "consensus", errors);
+  validateEnabled(section, "consensus", errors);
   if (!Array.isArray(section.roster)) errors.push("consensus.roster: array of non-negative integers required");
   else section.roster.forEach((value, index) => requireNat(value, `consensus.roster[${index}]`, errors));
   requireString(section.votes_file, "consensus.votes_file", errors);
@@ -164,6 +204,8 @@ function validateConsensus(section, errors) {
 
 function validateConvergence(section, errors) {
   if (!requireObject(section, "convergence", errors)) return;
+  checkKeys(section, ["enabled", "tools"], "convergence", errors);
+  validateEnabled(section, "convergence", errors);
   if (!Array.isArray(section.tools)) {
     errors.push("convergence.tools: array required");
     return;
@@ -171,6 +213,7 @@ function validateConvergence(section, errors) {
   section.tools.forEach((tool, index) => {
     const where = `convergence.tools[${index}]`;
     if (!requireObject(tool, where, errors)) return;
+    checkKeys(tool, ["tool", "op_arg"], where, errors);
     requireString(tool.tool, `${where}.tool`, errors);
     requireString(tool.op_arg, `${where}.op_arg`, errors);
   });
@@ -178,8 +221,8 @@ function validateConvergence(section, errors) {
 
 function validateCalibration(section, errors) {
   if (!requireObject(section, "calibration", errors)) return;
-  if (has(section, "enabled") && typeof section.enabled !== "boolean")
-    errors.push("calibration.enabled: boolean when present");
+  checkKeys(section, ["enabled", "delta_num", "delta_den", "min_samples", "records_file", "gated_tools"], "calibration", errors);
+  validateEnabled(section, "calibration", errors);
   const numOk = requireNat(section.delta_num, "calibration.delta_num", errors);
   const denOk = requireNat(section.delta_den, "calibration.delta_den", errors);
   if (numOk && denOk && (section.delta_num === 0 || section.delta_den <= section.delta_num))
@@ -191,6 +234,8 @@ function validateCalibration(section, errors) {
 
 function validateLinear(section, errors) {
   if (!requireObject(section, "linear", errors)) return;
+  checkKeys(section, ["enabled", "grants_file", "tools"], "linear", errors);
+  validateEnabled(section, "linear", errors);
   requireString(section.grants_file, "linear.grants_file", errors);
   if (!Array.isArray(section.tools)) {
     errors.push("linear.tools: array required");
@@ -199,6 +244,7 @@ function validateLinear(section, errors) {
   section.tools.forEach((tool, index) => {
     const where = `linear.tools[${index}]`;
     if (!requireObject(tool, where, errors)) return;
+    checkKeys(tool, ["tool", "cap_arg"], where, errors);
     requireString(tool.tool, `${where}.tool`, errors);
     requireString(tool.cap_arg, `${where}.cap_arg`, errors);
   });
@@ -206,6 +252,8 @@ function validateLinear(section, errors) {
 
 function validateBudget(section, errors) {
   if (!requireObject(section, "budget", errors)) return;
+  checkKeys(section, ["enabled", "budgets"], "budget", errors);
+  validateEnabled(section, "budget", errors);
   if (!Array.isArray(section.budgets)) {
     errors.push("budget.budgets: array required");
     return;
@@ -213,6 +261,7 @@ function validateBudget(section, errors) {
   section.budgets.forEach((budget, index) => {
     const where = `budget.budgets[${index}]`;
     if (!requireObject(budget, where, errors)) return;
+    checkKeys(budget, ["name", "cap", "tools", "cost_arg"], where, errors);
     requireString(budget.name, `${where}.name`, errors);
     requireNat(budget.cap, `${where}.cap`, errors);
     requireStringArray(budget.tools, `${where}.tools`, errors);
@@ -228,7 +277,14 @@ function analyzeParticipation(config) {
   const byKey = Object.fromEntries(KERNELS.map((kernel) => [kernel.key, kernel]));
   const states = [state(byKey.safety, "active", "required; gates every tool call")];
 
+  // enabled:false collapse (PolicyBundle effective*): a disabled section maps to
+  // absent before the host mapping — consensus/convergence/linear/budget go
+  // unregistered; temporal stays REGISTERED but vacuous
+  // (bundle_temporal_always_registered); calibration keeps its distinct
+  // present-but-disabled state (calibration_registered_iff double gate).
   if (!has(config, "temporal")) states.push(state(byKey.temporal, "absent", "section absent; off"));
+  else if (!sectionEnabled(config.temporal, true))
+    states.push(state(byKey.temporal, "inactive", "enabled:false; kernel stays registered but with zero policies (vacuous by construction)"));
   else {
     const effective = config.temporal.policies.some((policy) => policy.trigger.length > 0 && policy.forbidden.length > 0);
     states.push(state(byKey.temporal, effective ? "active" : "inactive",
@@ -236,27 +292,37 @@ function analyzeParticipation(config) {
   }
 
   if (!has(config, "consensus")) states.push(state(byKey.consensus, "absent", "section absent; off"));
+  else if (!sectionEnabled(config.consensus, true))
+    states.push(state(byKey.consensus, "inactive", "enabled:false; section collapses to absent — kernel unregistered"));
   else states.push(state(byKey.consensus, config.consensus.high_stakes.length ? "active" : "inactive",
     config.consensus.high_stakes.length ? `${config.consensus.high_stakes.length} high-stakes tool(s)` : "VACUOUS: high_stakes is empty; enforces nothing"));
 
   if (!has(config, "convergence")) states.push(state(byKey.convergence, "absent", "section absent; off"));
+  else if (!sectionEnabled(config.convergence, true))
+    states.push(state(byKey.convergence, "inactive", "enabled:false; section collapses to absent — kernel unregistered"));
   else states.push(state(byKey.convergence, config.convergence.tools.length ? "active" : "inactive",
     config.convergence.tools.length ? `${config.convergence.tools.length} replicated tool(s)` : "VACUOUS: tools is empty; enforces nothing"));
 
   if (!has(config, "calibration")) states.push(state(byKey.calibration, "absent", "section absent; off"));
   else {
-    const enabled = config.calibration.enabled === true;
+    const enabled = sectionEnabled(config.calibration, false);
     const effective = enabled && config.calibration.gated_tools.length > 0;
-    const reason = !enabled ? "enabled:false; explicitly inactive" :
+    const reason = !enabled ? (has(config.calibration, "enabled")
+        ? "enabled:false; explicitly inactive (present-but-disabled is a distinct pinned state)"
+        : "enabled defaults to false (EXPERIMENTAL, opt-in twice); absent flag means off") :
       effective ? `${config.calibration.gated_tools.length} gated tool(s)` : "VACUOUS: gated_tools is empty; enforces nothing";
     states.push(state(byKey.calibration, effective ? "active" : "inactive", reason));
   }
 
   if (!has(config, "linear")) states.push(state(byKey.linear, "absent", "section absent; off"));
+  else if (!sectionEnabled(config.linear, true))
+    states.push(state(byKey.linear, "inactive", "enabled:false; section collapses to absent — kernel unregistered"));
   else states.push(state(byKey.linear, config.linear.tools.length ? "active" : "inactive",
     config.linear.tools.length ? `${config.linear.tools.length} linearly-gated tool(s)` : "VACUOUS: tools is empty; enforces nothing"));
 
   if (!has(config, "budget")) states.push(state(byKey.budget, "absent", "section absent; off"));
+  else if (!sectionEnabled(config.budget, true))
+    states.push(state(byKey.budget, "inactive", "enabled:false; section collapses to absent — kernel unregistered"));
   else {
     const covering = config.budget.budgets.reduce((count, budget) => count + budget.tools.length, 0);
     states.push(state(byKey.budget, covering ? "active" : "inactive",

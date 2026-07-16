@@ -93,15 +93,37 @@ function markSafetyRole(policy, toolName, role, notice) {
   rule._comment = rule._comment ? `${rule._comment}; ${label}` : label;
 }
 
+// The verified a3790181 parser (Seal.parsePolicyBundle) hard-errors on unknown
+// keys at section and entry level, so `_comment` may no longer live inside kernel
+// sections. The ONE kernel-tolerated in-file home for review markers is a safety
+// rule's interior (rule-level strictness is a named follow-up); section notes are
+// therefore stamped onto safety rules via noteOnSafetyRules below, and file paths
+// keep their EDIT-ME placeholder VALUES (values are never key-policed).
+function noteOnSafetyRules(policy, toolNames, label) {
+  const names = new Set(toolNames);
+  let stamped = false;
+  for (const rule of policy.safety.tools) {
+    if (!names.has(rule.name)) continue;
+    rule._comment = rule._comment ? `${rule._comment}; ${label}` : label;
+    stamped = true;
+  }
+  if (!stamped) {
+    const rule = policy.safety.tools[0];
+    if (rule) rule._comment = rule._comment ? `${rule._comment}; ${label}` : label;
+  }
+}
+
 function temporalFor(toolNames) {
   return {
-    _comment: "EDIT-ME: every mapped destructive tool currently triggers the freeze; narrow trigger if that is not intended.",
-    policies: [{
-      name: "freeze-destructive-after-trigger",
-      type: "no_after",
-      trigger: [...toolNames],
-      forbidden: [...toolNames],
-    }],
+    section: {
+      policies: [{
+        name: "freeze-destructive-after-trigger",
+        type: "no_after",
+        trigger: [...toolNames],
+        forbidden: [...toolNames],
+      }],
+    },
+    note: "temporal: EDIT-ME: every mapped destructive tool currently triggers the freeze; narrow trigger if that is not intended.",
   };
 }
 
@@ -110,55 +132,56 @@ function budgetFor(toolNames, { name, costArg } = {}) {
     name: name || "guarded-calls",
     cap: 0,
     tools: [...toolNames],
-    _comment: "EDIT-ME: cap 0 is a fail-closed placeholder; set the intended limit before use.",
   };
+  let note = "budget: EDIT-ME: cap 0 is a fail-closed placeholder; set the intended limit before use.";
   if (costArg) {
     budget.cost_arg = costArg;
-    budget._comment += ` EDIT-ME: verify cost_arg '${costArg}' against the real tool arguments.`;
+    note += ` EDIT-ME: verify cost_arg '${costArg}' against the real tool arguments.`;
   }
-  return { budgets: [budget] };
+  return { section: { budgets: [budget] }, note };
 }
 
 function consensusFor(toolName, mappingNotice) {
   return {
-    roster: [],
-    votes_file: "EDIT-ME/seal-votes.ndjson",
-    high_stakes: [toolName],
-    _comment: `EDIT-ME: empty roster fails closed; configure real member IDs and votes_file. ${mappingNotice}`,
+    section: {
+      roster: [],
+      votes_file: "EDIT-ME/seal-votes.ndjson",
+      high_stakes: [toolName],
+    },
+    note: `consensus: EDIT-ME: empty roster fails closed; configure real member IDs and votes_file. ${mappingNotice}`,
   };
 }
 
 function linearFor(toolName, mappingNotice) {
   return {
-    grants_file: "EDIT-ME/seal-grants.ndjson",
-    tools: [{
-      tool: toolName,
-      cap_arg: "capability.id",
-      _comment: `EDIT-ME: verify cap_arg against the real tool arguments. ${mappingNotice}`,
-    }],
-    _comment: "EDIT-ME: configure a real grants_file before use; the placeholder fails closed.",
+    section: {
+      grants_file: "EDIT-ME/seal-grants.ndjson",
+      tools: [{ tool: toolName, cap_arg: "capability.id" }],
+    },
+    note: `linear: EDIT-ME: configure a real grants_file before use; the placeholder fails closed. EDIT-ME: verify cap_arg against the real tool arguments. ${mappingNotice}`,
   };
 }
 
 function convergenceFor(toolName, mappingNotice) {
   return {
-    tools: [{
-      tool: toolName,
-      op_arg: "operation.kind",
-      _comment: `EDIT-ME: verify op_arg against the real tool arguments. ${mappingNotice}`,
-    }],
+    section: {
+      tools: [{ tool: toolName, op_arg: "operation.kind" }],
+    },
+    note: `convergence: EDIT-ME: verify op_arg against the real tool arguments. ${mappingNotice}`,
   };
 }
 
 function calibrationFor(toolName, mappingNotice) {
   return {
-    enabled: true,
-    delta_num: 1,
-    delta_den: 20,
-    min_samples: 100,
-    records_file: "EDIT-ME/seal-forecasts.ndjson",
-    gated_tools: [toolName],
-    _comment: `EXPERIMENTAL. EDIT-ME: configure thresholds and records_file before use. ${mappingNotice}`,
+    section: {
+      enabled: true,
+      delta_num: 1,
+      delta_den: 20,
+      min_samples: 100,
+      records_file: "EDIT-ME/seal-forecasts.ndjson",
+      gated_tools: [toolName],
+    },
+    note: `calibration: EXPERIMENTAL. EDIT-ME: configure thresholds and records_file before use. ${mappingNotice}`,
   };
 }
 
@@ -198,31 +221,42 @@ function applyRecipe(manifest, recipeName) {
   const guardedNames = context.guarded.map((tool) => tool.name);
 
   if (recipeName === "prod-db") {
-    policy.temporal = temporalFor(guardedNames);
-    policy.budget = budgetFor(guardedNames, { name: "prod-db-destructive-calls" });
+    const temporal = temporalFor(guardedNames);
+    const budget = budgetFor(guardedNames, { name: "prod-db-destructive-calls" });
+    policy.temporal = temporal.section;
+    policy.budget = budget.section;
+    noteOnSafetyRules(policy, guardedNames, temporal.note);
+    noteOnSafetyRules(policy, guardedNames, budget.note);
   } else if (recipeName === "deploy") {
     const deploy = selectRole(context, "deploy");
     const rollback = selectRole(context, "rollback");
     const deployMapping = context.mappings.find((entry) => entry.role === "deploy");
     const rollbackMapping = context.mappings.find((entry) => entry.role === "rollback");
     markSafetyRole(policy, rollback, "rollback", rollbackMapping.notice);
-    policy.consensus = consensusFor(deploy, deployMapping.notice);
-    policy.linear = linearFor(deploy, deployMapping.notice);
+    const consensus = consensusFor(deploy, deployMapping.notice);
+    const linear = linearFor(deploy, deployMapping.notice);
+    policy.consensus = consensus.section;
+    policy.linear = linear.section;
+    noteOnSafetyRules(policy, [deploy], consensus.note);
+    noteOnSafetyRules(policy, [deploy], linear.note);
   } else if (recipeName === "token-governor") {
     const token = selectRole(context, "token");
     const payment = selectRole(context, "payment");
     const tokenMapping = context.mappings.find((entry) => entry.role === "token");
     const paymentMapping = context.mappings.find((entry) => entry.role === "payment");
     markSafetyRole(policy, payment, "payment", paymentMapping.notice);
-    policy.budget = budgetFor([token], { name: "token-usage", costArg: "usage.tokens" });
-    policy.budget.budgets[0]._comment += ` ${tokenMapping.notice}`;
+    const budget = budgetFor([token], { name: "token-usage", costArg: "usage.tokens" });
+    policy.budget = budget.section;
+    noteOnSafetyRules(policy, [token], `${budget.note} ${tokenMapping.notice}`);
   } else if (recipeName === "mesh") {
     const shared = selectRole(context, "shared");
     const publish = selectRole(context, "publish");
     const sharedMapping = context.mappings.find((entry) => entry.role === "shared");
     const publishMapping = context.mappings.find((entry) => entry.role === "publish");
     markSafetyRole(policy, publish, "publish", publishMapping.notice);
-    policy.convergence = convergenceFor(shared, sharedMapping.notice);
+    const convergence = convergenceFor(shared, sharedMapping.notice);
+    policy.convergence = convergence.section;
+    noteOnSafetyRules(policy, [shared], convergence.note);
   }
 
   const participation = validateGenerated(policy, manifest, RECIPE_ACTIVE[recipeName]);
@@ -231,23 +265,24 @@ function applyRecipe(manifest, recipeName) {
 
 function kernelFragment(context, symbol) {
   const guardedNames = context.guarded.map((tool) => tool.name);
-  if (symbol === "S") return clone(context.policy.safety);
-  if (symbol === "T") return temporalFor(guardedNames);
-  if (symbol === "B") return budgetFor(guardedNames, { name: "guarded-call-budget" });
+  if (symbol === "S") return { section: clone(context.policy.safety), note: null, noteTools: [] };
+  if (symbol === "T") return { ...temporalFor(guardedNames), noteTools: guardedNames };
+  if (symbol === "B") return { ...budgetFor(guardedNames, { name: "guarded-call-budget" }), noteTools: guardedNames };
   if (symbol === "C" || symbol === "L") {
     const tool = selectRole(context, "deploy");
     const mapping = context.mappings.at(-1);
-    return symbol === "C" ? consensusFor(tool, mapping.notice) : linearFor(tool, mapping.notice);
+    const made = symbol === "C" ? consensusFor(tool, mapping.notice) : linearFor(tool, mapping.notice);
+    return { ...made, noteTools: [tool] };
   }
   if (symbol === "V") {
     const tool = selectRole(context, "shared");
-    return convergenceFor(tool, context.mappings.at(-1).notice);
+    return { ...convergenceFor(tool, context.mappings.at(-1).notice), noteTools: [tool] };
   }
   if (symbol === "K") {
     const tool = context.guarded[0].name;
     const notice = `EDIT-ME: best-fit mapping: role 'calibration-gated' → tool '${tool}'. Review whether this experimental kernel suits this server at all.`;
     context.notices.push(notice);
-    return calibrationFor(tool, notice);
+    return { ...calibrationFor(tool, notice), noteTools: [tool] };
   }
   throw new Error(`unknown kernel ${JSON.stringify(symbol)} (known: S, T, C, V, L, B; K requires --experimental)`);
 }
@@ -272,7 +307,9 @@ function addKernelToPolicy(policy, manifest, symbol, { experimental = false } = 
   const context = recipeContext(manifest);
   const result = clone(policy);
   if (!Object.prototype.hasOwnProperty.call(result, "server")) result.server = manifest.server;
-  result[section] = kernelFragment(context, normalized);
+  const fragment = kernelFragment(context, normalized);
+  result[section] = fragment.section;
+  if (fragment.note) noteOnSafetyRules(result, fragment.noteTools, fragment.note);
   const shape = validateTrustedConfig(result);
   if (!shape.ok) throw new Error(`updated policy failed TrustedConfig validation: ${shape.errors.join("; ")}`);
   const newState = shape.participation.states.find((entry) => entry.symbol === normalized);
