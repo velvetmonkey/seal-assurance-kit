@@ -143,7 +143,11 @@ async function verify(receiptPath) {
 }
 
 function report(checks, receipt, receiptPath, { notMediated = false, unparseable = false } = {}) {
-  const allGood = checks.every((c) => c.pass);
+  // Fail closed on an empty check list: `[].every()` is `true`, so without
+  // this guard a zero-check report would vouch for a receipt nothing checked.
+  // Unreachable through verify() today (every call site adds >=1 check first);
+  // pinned as an invariant in test/verify-vacuity.test.cjs.
+  const allGood = checks.length > 0 && checks.every((c) => c.pass);
   console.log(`seal verify  ${receiptPath}`);
   const kid = (receipt.kernel_identity || {}).wasm_sha256;
   console.log(`  receipt verdict: ${receipt.verdict}   kernel: ${kid ? kid.slice(0, 12) : "?"}`);
@@ -157,4 +161,4 @@ function report(checks, receipt, receiptPath, { notMediated = false, unparseable
   return allGood;
 }
 
-module.exports = { verify };
+module.exports = { verify, report };

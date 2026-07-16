@@ -21,10 +21,20 @@ async function runCase(c) {
   return { verdict: r.verdict, deny: r.receipt.deny_kernel, bytes: r.raw };
 }
 
-async function test(profile = "L0") {
-  const { CORPUS } = await import("file://" + path.resolve(__dirname, "../kernel/corpus.js"));
+async function test(profile = "L0", corpusOverride = null) {
+  const CORPUS =
+    corpusOverride ||
+    (await import("file://" + path.resolve(__dirname, "../kernel/corpus.js"))).CORPUS;
   console.log(`seal test  reference-kernel conformance  profile=${profile}  cases=${CORPUS.length}`);
   console.log(`  (self-conformance vs the vendored reference kernel; not a live-endpoint boundary test)`);
+  // Fail closed on an empty corpus: a fold over zero traces is vacuously
+  // "conformant" (allGood never gets a chance to go false). An oracle that
+  // ran no traces has proven nothing. Unreachable today (CORPUS is a static
+  // non-empty list); pinned in test/conformance-vacuity.test.cjs.
+  if (CORPUS.length === 0) {
+    console.log("  FAIL  NON-CONFORMANT  (empty corpus — zero traces run, nothing proven)");
+    return false;
+  }
   let allGood = true;
   for (const c of CORPUS) {
     const a = await runCase(c);
