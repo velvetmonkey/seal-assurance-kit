@@ -113,6 +113,23 @@ function buildInput(vector) {
   const jsVectors = MANIFEST.vectors.filter((v) =>
     v.surfaces.some((s) => s.startsWith("js-validator")) && buildInput(v.vector) !== null);
 
+  // Non-vacuity: this script's PURPOSE #2 is six-copy verdict agreement over
+  // the js-validator vectors. If the filter matches nothing (a renamed
+  // `surfaces` tag, a manifest that failed to load its vectors), the loop
+  // below runs zero times and the script would still print PASS — verifying
+  // nothing. Fail loud instead. Also require the named known-gap vector to be
+  // present, since its EXACT-hold check (kit accepts / five reject) is the one
+  // asserted divergence and is silently skipped if the vector is absent.
+  const jsValidatorVectorCount = MANIFEST.vectors.filter((v) =>
+    v.surfaces.some((s) => s.startsWith("js-validator"))).length;
+  check(`js-validator vectors present (non-vacuous differential)`,
+    jsVectors.length > 0 && jsVectors.length === jsValidatorVectorCount,
+    `expected ${jsValidatorVectorCount} runnable js-validator vectors, got ${jsVectors.length} — ` +
+    `a differential over zero (or a dropped) vectors proves nothing`);
+  check(`known-gap vector present in the differential set`,
+    jsVectors.some((v) => v.id === KNOWN_GAP_ID),
+    `${KNOWN_GAP_ID} absent — its exact-hold assertion (kit accepts / five reject) would be silently skipped`);
+
   for (const v of jsVectors) {
     const input = buildInput(v.vector);
     const verdicts = COPIES.map((c) => ({ name: c.name, ok: validators[c.name](structuredClone(input)).ok }));

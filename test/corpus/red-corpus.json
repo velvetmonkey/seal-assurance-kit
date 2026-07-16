@@ -46,9 +46,33 @@
       "surfaces": ["js-validator (all six)", "rust-host (receipt assembly)"],
       "vector": { "base_fixture": "receipt-unparseable.json", "mutate": { "set": { "tool": "db.execute", "arguments": {} } } },
       "expected_refusal": { "verb": "reject", "error_substring": "must be absent on an unparseable-request receipt" },
-      "defence": "seal-check/receipt-format.js:246-261 (JS); seal-host/rust/src/decision_receipt.rs:205-237 (host omission); pinned in seal-host/rust/tests/differential.rs:195 (1e309 serde-vs-Lean).",
-      "executed_in": "test/red-corpus.test.cjs (JS) + seal-host rust differential.rs:195 (referenced-and-run)",
+      "defence": "seal-check/receipt-format.js:246-261 (JS refusal); seal-host/rust/src/decision_receipt.rs:205-237 (host omits structured fields on the Err leg). The serde-vs-Lean DIVERGENCE that triggers the reduced-scope path is a separate premise, pinned by tests/differential.rs::known_lean_stricter_cases (1e309) and mapped across the grammar in tests/parser_boundary.rs.",
+      "executed_in": "REFUSAL (this vector): test/red-corpus.test.cjs (kit JS validator rejects an unparseable receipt smuggling tool/arguments) + seal-host decision_receipt.rs::tests::unparseable_line_yields_receipt_with_raw_hash_not_an_error (host omits tool/arguments/args_hash/canonical_* on the unparseable leg) + tests/host_path.rs::receipt_layer_never_vetoes_kernel_verdicts (same, end-to-end through the real binary). PREMISE (the divergence that elects the path, NOT this vector's refusal): differential.rs::known_lean_stricter_cases + tests/parser_boundary.rs::{parser_boundary_map,no_bypass_no_new_divergence}. Note (corrected 2026-07-16): the prior cite of differential.rs:195 as this vector's pin was a mis-attribution — that test asserts the PARSEABILITY divergence, not the receipt-omission refusal.",
       "proof_catchable": { "verdict": "NO", "why": "The serde re-parser and Lean's classifier are two different parsers of the same bytes. Lean's theorems cover what the KERNEL judged; the divergence is a property of the host's serde_json re-derivation, a layer the proofs deliberately do not model." }
+    },
+    {
+      "id": "serde-divergence-lone-surrogate",
+      "title": "serde/Lean parser divergence (NEW, B2-a): a lone UTF-16 surrogate escape elects the reduced-scope path",
+      "finding": "Brief B2-a parser-boundary map (Monkey 2026-07-16). Only 1e309 was previously pinned as a divergence, by example. The map (seal-host tests/parser_boundary.rs) found the set is WIDER: a lone/reversed \\uD800-\\uDFFF escape parses in Lean's JSON but serde_json rejects the whole line.",
+      "capability": "Send a Lean-mediated tools/call whose argument string carries an unpaired surrogate escape (\\ud800), so serde cannot re-parse the line and the host takes the authorised-unparseable path.",
+      "surfaces": ["rust-host (serde/Lean parser boundary; reduced-scope receipt)"],
+      "vector": { "description": "arguments.v = \"\\ud800\" (also \\udc00, reversed pair \\udc00\\ud800, lone surrogate in a KEY). Lean classify=1 (mediated); serde from_str fails -> reduced-scope-unparseable receipt (request_sha256 + request_parse_error only)." },
+      "expected_refusal": { "verb": "reduced-scope, never bypass", "detail": "Lean mediates; serde cannot parse; the host records request_sha256 + request_parse_error and omits structured fields. NEVER a bypass (serde routes AND Lean passes through)." },
+      "defence": "seal-host/rust/src/decision_receipt.rs:205-237 (host omits structured fields on the unparseable leg).",
+      "executed_in": "seal-host/rust/tests/parser_boundary.rs::parser_boundary_map (str-lone-high-surrogate / str-lone-low-surrogate / str-reversed-surrogates / str-lone-surrogate-in-key -> reduced-scope-unparseable) + ::no_bypass_no_new_divergence (4000-case property: no generated line, surrogates included, ever bypasses).",
+      "proof_catchable": { "verdict": "NO", "why": "A parseability difference between serde_json and Lean's JSON parser — below the proof line, in the host's serde re-derivation the kernel theorems do not model." }
+    },
+    {
+      "id": "serde-divergence-deep-nesting",
+      "title": "serde/Lean parser divergence (NEW, B2-a): JSON nested past serde's recursion limit (128) elects the reduced-scope path",
+      "finding": "Brief B2-a parser-boundary map (Monkey 2026-07-16). serde_json rejects a document nested deeper than 128 total levels (last-OK 127); Lean's recursive-descent parser has no such limit and keeps mediating. AVAILABILITY NOTE: on a small (2 MiB) stack Lean's parser stack-overflows and ABORTS around total depth ~15k — fail-closed (the abort kills the gate; no bypass), characterized in the Part B report, not pinned as a crashing test.",
+      "capability": "Send a Lean-mediated tools/call whose argument nests arrays past serde's recursion limit so serde rejects the whole line.",
+      "surfaces": ["rust-host (serde/Lean parser boundary; reduced-scope receipt)"],
+      "vector": { "description": "arguments.v = an array nested >=125 deep (total document depth >=128). serde rejects, Lean mediates -> reduced-scope-unparseable. See parser_boundary.rs nested()." },
+      "expected_refusal": { "verb": "reduced-scope, never bypass", "detail": "Lean mediates; serde cannot parse; reduced-scope receipt. Nesting deep enough to exhaust Lean's stack aborts the process (fail-closed), never forwards." },
+      "defence": "seal-host/rust/src/decision_receipt.rs:205-237 (host omission).",
+      "executed_in": "seal-host/rust/tests/parser_boundary.rs::parser_boundary_map (nesting-124 agree-routed vs nesting-125/200/300 reduced-scope-unparseable — the serde recursion-limit boundary at total depth 128) + ::no_bypass_no_new_divergence.",
+      "proof_catchable": { "verdict": "NO", "why": "Parser recursion-limit divergence between two JSON implementations; a host re-derivation property, below the proof line." }
     },
     {
       "id": "schema-k-hard-split",
@@ -83,7 +107,7 @@
       "vector": { "description": "Kernel audit request_sha256 for line A; host line hash for line B — mismatch. Also: a crafted line whose replayed hash occurs !=1 time to misfire the substitution count guard." },
       "expected_refusal": { "verb": "refuse pairing", "detail": "host returns Err (fails closed, nothing forwards); verifier requires the replayed hash to occur exactly once before substitution." },
       "defence": "seal-host/rust/src/decision_receipt.rs:135-145 (host cross-check, Err on mismatch); seal-assurance-kit/src/verify.cjs:134-140 (substitution-compare, split length===2 one-shot guard).",
-      "executed_in": "Referenced-and-run: seal-host/rust/src/decision_receipt.rs::tests::forged_line_pairing_is_refused (host cross-check) + host_path.rs:784. The verifier substitution one-shot guard (verify.cjs:134-140) is DOCUMENTED here, not executably pinned this session — the load-bearing T2 defence is the host cross-check, which is pinned.",
+      "executed_in": "Referenced-and-run: seal-host/rust/src/decision_receipt.rs::tests::forged_line_pairing_is_refused (host cross-check returns Err on a kernel-hash / line-hash mismatch) + tests/host_path.rs::receipt_layer_never_vetoes_kernel_verdicts (end-to-end: the persisted ALLOW's request_sha256 equals the kernel-attested audit hash — the pairing the cross-check enforces; test-name ref, the prior bare :784 line ref drifted). The verifier substitution one-shot guard (verify.cjs:134-140) is DOCUMENTED here, not executably pinned this session — the load-bearing T2 defence is the host cross-check, which is pinned.",
       "proof_catchable": { "verdict": "PARTLY", "why": "The host cross-check (kernel-attested hash == host line hash) is a checkable Lean/host property. The SIX-copy verifier agreement on the substitution-compare is not — it lives in hand-maintained JS, below the proof line." }
     },
     {
@@ -93,9 +117,9 @@
       "capability": "Send the same logical call with differing line terminators.",
       "surfaces": ["rust-host (lean_view / forward)"],
       "vector": { "description": "sha256(lean_view(\"x\\n\")) == sha256(lean_view(\"x\\r\\n\")) == sha256(\"x\"); forwarded bytes differ." },
-      "expected_refusal": { "verb": "pin-current-behaviour", "detail": "commitment is over the terminator-stripped lean_view; forward carries original bytes. Honest name, no silent change." },
-      "defence": "seal-host/rust/src/main.rs:330-333 (lean_view strip); forward at main.rs:601/669/792.",
-      "executed_in": "seal-host/rust/src/main.rs:855 request_commitment_is_over_the_terminator_stripped_lean_view (referenced-and-run)",
+      "expected_refusal": { "verb": "pin-current-behaviour", "detail": "commitment is over the terminator-stripped lean_view; the forward carries the original bytes INCLUDING the terminator, so two children see byte-different lines under one commitment. Characterized, not a defect: lean_view strips only the trailing terminator (<=1 \\n then <=1 \\r), the stripped bytes are inert JSON line framing, and the receipt names its commitment as that view. Honest name, no silent change." },
+      "defence": "seal-host/rust/src/main.rs:338-341 (lean_view strip, <=1 \\n then <=1 \\r); the forward carries the original wire (terminator included) at main.rs:609/677/800.",
+      "executed_in": "COVERAGE NOTE (corrected 2026-07-16): seal-host/rust/src/main.rs::tests::request_commitment_is_over_the_terminator_stripped_lean_view (was cited as :855, now :911) pins ONLY the benign half — lean_view('x\\n')==lean_view('x\\r\\n')==b'x' plus a golden sha256 — and NEVER touches the child, so it does not pin the T3 gap it was cited for. The gap (ONE commitment AND byte-different bytes reaching the child) is pinned END-TO-END by seal-host/rust/tests/host_path.rs::terminator_shares_commitment_but_child_sees_original_bytes: the same call under \\n and \\r\\n yields two ALLOW receipts sharing one request_sha256 while the child receives the original wire, differing by exactly the terminator's \\r.",
       "proof_catchable": { "verdict": "PARTLY", "why": "Lean's golden vector covers the commitment over the view Lean judged. The gap between 'what the kernel committed to' and 'what bytes were forwarded to the child' is a host transport property the kernel theorems do not reach." }
     },
     {
@@ -118,8 +142,8 @@
       "surfaces": ["verify-action (evidence aggregation)"],
       "vector": { "description": "results=[] or replayApplicable=[]; a naive .every() would return true and claim signature/replay/authority consistency over nothing." },
       "expected_refusal": { "verb": "refuse vacuous truth", "detail": "each aggregate ANDs a length>0 guard so an empty set yields false, never a spurious consistent verdict." },
-      "defence": "seal-verify-action/lib/main.js:106-120 (length>0 && ...every() on signatureValid, replayConsistent, authorityTrusted).",
-      "executed_in": "seal-verify-action/test/main.test.js (extended)",
+      "defence": "seal-verify-action/lib/main.js:130-141 (aggregateVerdicts: length>0 && ...every() on signatureValid, replayConsistent, authorityTrusted; called at :106). Kit LATENT folds pinned 2026-07-16: src/verify.cjs:146 report() (checks.length>0 guard) + src/test.cjs conformance oracle (CORPUS.length>0 guard) + test/fleet-copy-differential.cjs (loud fail on empty jsVectors / absent known-gap).",
+      "executed_in": "seal-verify-action/test/main.test.js (extended; LIVE-guarded) + seal-assurance-kit/test/verify-vacuity.test.cjs + test/conformance-vacuity.test.cjs (kit folds, LATENT-unreachable-today, invariant pinned). fleet-copy-differential.cjs guards run under `npm run test:fleet-differential` (MANUAL).",
       "proof_catchable": { "verdict": "NO", "why": "Aggregate-over-empty-set semantics live in the verifier's JS. A theorem about a single receipt says nothing about how a fleet aggregator folds zero of them." }
     }
   ]
