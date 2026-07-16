@@ -44,15 +44,28 @@ const FLEET_ROOT = process.env.SEAL_FLEET_ROOT
 
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(__dirname, "corpus", "red-corpus.json"), "utf8"));
 
+// The profile spec (docs/VERIFY-PROFILES.md): the known-gap expectation below
+// is DERIVED from each repo's live declared VERIFY_PROFILE, not hand-named.
+const SPEC = JSON.parse(fs.readFileSync(path.join(__dirname, "corpus", "verify-profiles.json"), "utf8"));
+const DECL_RE = new RegExp(SPEC.declaration_regex);
+
 // The six copies. `kit` is the canonical source that had fallen behind; the other
 // five are the downstream copies expected byte-identical to each other.
+// `rosterKey`/`declFile` name the repo-level VERIFY_PROFILE declaration each
+// format copy belongs to (seal-live-demo's two copies share one declaration).
 const COPIES = [
-  { name: "kit (kernel/)", role: "source", file: path.join(KIT_ROOT, "kernel", "receipt-format.js") },
-  { name: "seal-check", role: "downstream", file: path.join(FLEET_ROOT, "seal-check", "receipt-format.js") },
-  { name: "seal-demo/public", role: "downstream", file: path.join(FLEET_ROOT, "seal-demo", "public", "receipt-format.js") },
-  { name: "seal-live-demo/pwa", role: "downstream", file: path.join(FLEET_ROOT, "seal-live-demo", "pwa", "receipt-format.js") },
-  { name: "seal-live-demo/seal-gateway", role: "downstream", file: path.join(FLEET_ROOT, "seal-live-demo", "seal-gateway", "receipt-format.js") },
-  { name: "seal-verify-action/vendor", role: "downstream", file: path.join(FLEET_ROOT, "seal-verify-action", "vendor", "seal-assurance-kit", "kernel", "receipt-format.js") },
+  { name: "kit (kernel/)", role: "source", file: path.join(KIT_ROOT, "kernel", "receipt-format.js"),
+    rosterKey: "kit", declFile: path.join(KIT_ROOT, "src", "verify.cjs") },
+  { name: "seal-check", role: "downstream", file: path.join(FLEET_ROOT, "seal-check", "receipt-format.js"),
+    rosterKey: "seal-check", declFile: path.join(FLEET_ROOT, "seal-check", "receipt.js") },
+  { name: "seal-demo/public", role: "downstream", file: path.join(FLEET_ROOT, "seal-demo", "public", "receipt-format.js"),
+    rosterKey: "seal-demo", declFile: path.join(FLEET_ROOT, "seal-demo", "public", "audit.js") },
+  { name: "seal-live-demo/pwa", role: "downstream", file: path.join(FLEET_ROOT, "seal-live-demo", "pwa", "receipt-format.js"),
+    rosterKey: "seal-live-demo", declFile: path.join(FLEET_ROOT, "seal-live-demo", "pwa", "receipt.js") },
+  { name: "seal-live-demo/seal-gateway", role: "downstream", file: path.join(FLEET_ROOT, "seal-live-demo", "seal-gateway", "receipt-format.js"),
+    rosterKey: "seal-live-demo", declFile: path.join(FLEET_ROOT, "seal-live-demo", "pwa", "receipt.js") },
+  { name: "seal-verify-action/vendor", role: "fork-downstream", file: path.join(FLEET_ROOT, "seal-verify-action", "vendor", "seal-assurance-kit", "kernel", "receipt-format.js"),
+    rosterKey: "seal-verify-action", declFile: path.join(FLEET_ROOT, "seal-verify-action", "lib", "pin.js") },
 ];
 
 const KNOWN_GAP_ID = "signed-config-known-gap";
@@ -88,7 +101,29 @@ function buildInput(vector) {
     process.exit(1);
   }
 
-  // --- 1. The five downstream copies must be byte-identical to each other ---
+  // --- 0b. Live declared profiles: every copy's repo must declare, and the
+  // declaration must match the spec roster (docs/VERIFY-PROFILES.md §6). The
+  // known-gap assertion below is DERIVED from these declarations.
+  for (const c of COPIES) {
+    const m = fs.existsSync(c.declFile) && fs.readFileSync(c.declFile, "utf8").match(DECL_RE);
+    c.profile = m ? m[1] : null;
+    const rosterProfile = (SPEC.roster[c.rosterKey] || {}).profile;
+    check(`declaration: ${c.name} repo declares ${rosterProfile}`,
+      c.profile === rosterProfile && !!SPEC.profiles[c.profile],
+      `live declaration ${c.profile} != roster ${rosterProfile} (${c.declFile}) — undeclared or re-declared copy; report, do not re-green`);
+  }
+  if (failures) {
+    console.log(`\n${failures} FAILURE(S) — declarations unusable; not deriving expectations from them`);
+    process.exit(1);
+  }
+
+  // --- 1. The downstream copies must be byte-identical to each other -------
+  // The seal-verify-action copy is a MAINTAINED FORK since kit re-vendor
+  // fbe0ca8 (2026-07-16): it carries a mandatory FORK DELTA header naming the
+  // fork. Its contract here is byte-identity MODULO exactly that header —
+  // the header must be PRESENT (a vendor-sync sweep silently flattening it is
+  // RED) and stripping the leading FORK DELTA comment block must yield the
+  // canonical seal-check bytes (any drift beyond the declared header is RED).
   const downstream = COPIES.filter((c) => c.role === "downstream");
   const bytes = new Map(downstream.map((c) => [c.name, fs.readFileSync(c.file, "utf8")]));
   const ref = downstream[0];
@@ -96,6 +131,28 @@ function buildInput(vector) {
   for (const c of downstream.slice(1)) {
     check(`downstream byte-identical: ${c.name} == ${ref.name}`, bytes.get(c.name) === refBytes,
       "a downstream copy has drifted from its siblings");
+  }
+  for (const c of COPIES.filter((x) => x.role === "fork-downstream")) {
+    const forkLines = fs.readFileSync(c.file, "utf8").split("\n");
+    const refLines = refBytes.split("\n");
+    // The fork copy must be EXACTLY the canonical bytes with ONE contiguous
+    // pure-comment block (containing "FORK DELTA") inserted. Find the first
+    // diverging line; the extra lines start there and their count is the
+    // length difference; everything after must match the canonical remainder.
+    const extra = forkLines.length - refLines.length;
+    let firstDiff = 0;
+    while (firstDiff < refLines.length && forkLines[firstDiff] === refLines[firstDiff]) firstDiff++;
+    const inserted = forkLines.slice(firstDiff, firstDiff + extra);
+    const headerOk = extra > 0 &&
+      inserted.every((l) => l.startsWith("//")) &&
+      inserted.some((l) => /FORK DELTA/.test(l));
+    check(`fork header present: ${c.name} carries its FORK DELTA header`,
+      headerOk,
+      "the fork header was flattened (or is not a pure comment block) — the fbe0ca8 fork formalization regressed");
+    const stripped = forkLines.slice(0, firstDiff).concat(forkLines.slice(firstDiff + extra)).join("\n");
+    check(`fork byte-identical modulo header: ${c.name} == ${ref.name} after stripping FORK DELTA`,
+      headerOk && stripped === refBytes,
+      "the fork copy drifted beyond its declared FORK DELTA header");
   }
 
   // --- 2. Load every copy's validateReceipt ---
@@ -135,13 +192,24 @@ function buildInput(vector) {
     const verdicts = COPIES.map((c) => ({ name: c.name, ok: validators[c.name](structuredClone(input)).ok }));
 
     if (v.id === KNOWN_GAP_ID) {
-      // The one documented, intentional divergence: kit accepts, five reject.
-      const kit = verdicts.find((x) => x.name.startsWith("kit")).ok;
-      const five = verdicts.filter((x) => !x.name.startsWith("kit"));
-      check(`KNOWN GAP holds exactly: kit ACCEPTS mediated-no-signed_config`, kit === true,
-        "kit no longer accepts — the signed_config gap changed; revisit the fix decision, do not re-green");
-      check(`KNOWN GAP holds exactly: all five downstream REJECT`, five.every((x) => x.ok === false),
-        "a downstream copy stopped rejecting missing signed_config: " + JSON.stringify(five));
+      // The one documented, intentional divergence — DERIVED from profiles:
+      // a copy accepts a mediated-no-signed_config receipt iff its repo
+      // declares a profile whose `configless_mediated` is "accept" (P-REF).
+      // Today that is exactly the kit; if a copy re-profiles, the roster
+      // check above goes red FIRST — this stays keyed to declarations.
+      for (const c of COPIES) {
+        const want = SPEC.profiles[c.profile].configless_mediated === "accept";
+        const got = verdicts.find((x) => x.name === c.name).ok;
+        check(`KNOWN GAP per profile: ${c.name} [${c.profile}] ${want ? "ACCEPTS" : "REJECTS"} mediated-no-signed_config`,
+          got === want,
+          want
+            ? "a P-REF copy no longer accepts — the signed_config gap changed; revisit the design decision, do not re-green"
+            : "an enforcing copy stopped rejecting missing signed_config — fail-open drift; report as a finding");
+      }
+      const accepters = COPIES.filter((c) => SPEC.profiles[c.profile].configless_mediated === "accept");
+      check(`KNOWN GAP non-vacuity: divergence exists (some accept, some reject)`,
+        accepters.length > 0 && accepters.length < COPIES.length,
+        "profile table degenerated — the known-gap divergence is no longer exercised");
       continue;
     }
 
@@ -152,7 +220,7 @@ function buildInput(vector) {
   }
 
   console.log(failures === 0
-    ? `\nFLEET DIFFERENTIAL PASS  (5 downstream byte-identical; 6-copy verdict agreement on ${jsVectors.length - 1} vectors + 1 named known-gap)`
+    ? `\nFLEET DIFFERENTIAL PASS  (4 downstream byte-identical + 1 fork byte-identical modulo its FORK DELTA header; declarations match the roster; 6-copy verdict agreement on ${jsVectors.length - 1} vectors + 1 profile-derived known-gap)`
     : `\n${failures} FAILURE(S) — the six verifier copies do not agree as pinned`);
   process.exit(failures === 0 ? 0 : 1);
 })().catch((e) => { console.error("ERR", e); process.exit(1); });
