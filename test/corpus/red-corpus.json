@@ -51,6 +51,18 @@
       "proof_catchable": { "verdict": "NO", "why": "The serde re-parser and Lean's classifier are two different parsers of the same bytes. Lean's theorems cover what the KERNEL judged; the divergence is a property of the host's serde_json re-derivation, a layer the proofs deliberately do not model." }
     },
     {
+      "id": "t1-unparseable-forged-verified",
+      "title": "Forged unparseable ALLOW stamped VERIFIED by the kit — self-consistent JSON, no kernel replay, no signed config",
+      "finding": "Red-team round 2 council 144f497f (Grok T1); reproduced live by Monkey 2026-07-16. The kit's unparseable branch (src/verify.cjs) skipped decide()/replay and ran only two self-consistency checks over attacker-controlled JSON, then report({unparseable:true}) printed PASS VERIFIED and returned allGood=true (exit 0). A hand-written v2 receipt with request_parse_error, verdict ALLOW, authorization explicit_policy_allow (no approval, no signed_config), deny_kernel null, and a self-consistent inner audit was stamped VERIFIED — no kernel, no host, no signature.",
+      "capability": "Author or relay a schema-valid v2 receipt (control of the JSON alone — no kernel, no key).",
+      "surfaces": ["kit-verify (bin/seal verify -> src/verify.cjs unparseable branch + report)"],
+      "vector": { "description": "unparseable ALLOW; audit.verdict=allow (maps ALLOW), certs match, audit.request_sha256==request_sha256; NO signed_config. Built in test/forged-binding.test.cjs::forgedUnparseableAllow()." },
+      "expected_refusal": { "verb": "never VERIFIED; config-less forge is a hard FAIL", "detail": "the unparseable path performs no independent replay, so it is NEVER 'verified' (REDUCED SCOPE, non-zero exit); and a receipt whose kernel_config is not Ed25519-signed fails closed (FAIL NOT VERIFIED). seal-check parity: unparseable -> authorised-unparseable, allGood=false." },
+      "defence": "seal-assurance-kit/src/verify.cjs configSignatureValid + the reducedScope branch of report() (never prints VERIFIED for unparseable; returns not-passing). Reference posture: seal-check/receipt.js:278-290.",
+      "executed_in": "test/forged-binding.test.cjs::'P0: a forged unparseable ALLOW (no kernel replay, no signed config) is NOT verified' (forge -> FAIL NOT VERIFIED, exit 1) + '... honest REDUCED SCOPE, not a false failure' (legit unparseable -> REDUCED SCOPE, exit 1, not invalid).",
+      "proof_catchable": { "verdict": "NO", "why": "A JS verifier skipped re-execution and mislabelled its own reduced-scope result as VERIFIED. It lives entirely in the kit's verify.cjs, outside the mediated boundary the Lean kernel theorems cover — no theorem about the kernel constrains how a downstream verifier folds or labels a receipt it never replayed." }
+    },
+    {
       "id": "serde-divergence-lone-surrogate",
       "title": "serde/Lean parser divergence (NEW, B2-a): a lone UTF-16 surrogate escape elects the reduced-scope path",
       "finding": "Brief B2-a parser-boundary map (Monkey 2026-07-16). Only 1e309 was previously pinned as a divergence, by example. The map (seal-host tests/parser_boundary.rs) found the set is WIDER: a lone/reversed \\uD800-\\uDFFF escape parses in Lean's JSON but serde_json rejects the whole line.",

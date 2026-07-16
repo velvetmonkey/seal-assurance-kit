@@ -10,7 +10,7 @@
   "license": "Apache-2.0",
   "scripts": {
     "gen": "node src/gen-receipt.cjs",
-    "verify": "node bin/seal verify fixtures/receipt-block.json && node bin/seal verify fixtures/receipt-allow.json && node bin/seal verify fixtures/receipt-crosstool.json && node bin/seal verify fixtures/receipt-unparseable.json",
+    "verify": "node bin/seal verify fixtures/receipt-block.json && node bin/seal verify fixtures/receipt-allow.json && node bin/seal verify fixtures/receipt-crosstool.json",
     "test": "npm run --silent verify && npm run --silent test:drift && npm run --silent test:bypass && npm run --silent test:format && npm run --silent test:adequacy && npm run --silent test:receipt-diff && npm run --silent test:policy-sign && npm run --silent test:forged-binding && npm run --silent test:scan-pin && npm run --silent test:scan-v2&& npm run --silent test:recipes && npm run --silent test:connect && npm run --silent test:red-corpus && npm run --silent test:vacuity",
     "test:red-corpus": "node --test test/red-corpus.test.cjs",
     "test:vacuity": "node --test test/verify-vacuity.test.cjs test/conformance-vacuity.test.cjs",
