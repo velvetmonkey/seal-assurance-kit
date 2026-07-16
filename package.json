@@ -15,6 +15,7 @@
     "test:red-corpus": "node --test test/red-corpus.test.cjs",
     "test:vacuity": "node --test test/verify-vacuity.test.cjs test/conformance-vacuity.test.cjs",
     "test:fleet-differential": "node test/fleet-copy-differential.cjs",
+    "test:fleet-verify-differential": "node test/fleet-verify-differential.cjs",
     "test:forged-binding": "node --test test/forged-binding.test.cjs",
     "test:scan-pin": "node --test test/scan-pin.test.cjs",
     "test:drift": "node test/fixture-drift.cjs",
