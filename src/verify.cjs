@@ -11,8 +11,50 @@
 // "verified" (spec §6).
 const { decide, kernelSha, pinnedSha } = require("../kernel/runner.cjs");
 const crypto = require("crypto");
+const { isDeepStrictEqual } = require("util");
 const fs = require("fs");
 const path = require("path");
+
+// Ed25519 verification of a receipt's signed_config. Proves the mediated policy
+// the kernel judged under was signed by the key the config carries AND that the
+// signed payload IS the carried kernel_config. Host-produced receipts always
+// carry signed_config (the kit's own producer emits parseable canonical
+// receipts, so it never reaches the unparseable path — see the KNOWN GAP in
+// kernel/receipt-format.js). A forge that omits signed_config, corrupts the
+// signature, or mutates the policy after signing fails here.
+//
+// TRUST ANCHOR (stated honestly): this establishes that the config is
+// internally SIGNED and self-consistent, NOT that the signer is a trusted
+// authority — `seal verify` takes no trust root, so unlike seal-check it cannot
+// compute `authority_trusted` against a pinned key set. A self-signed config
+// with a matching kernel_config would pass this check; the REDUCED SCOPE label
+// (never "verified") is what keeps the claim honest for a signed-but-unpinned
+// config. Requiring a trust anchor (`--trusted <keys>`) is the strictly stronger
+// follow-up; this check already fails the config-less forge outright.
+const SPKI_ED25519_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+function configSignatureValid(receipt) {
+  const sc = receipt.signed_config;
+  if (!sc || typeof sc.payload !== "string" || typeof sc.signature !== "string" ||
+      typeof sc.pubkey !== "string")
+    return { ok: false, detail: "signed_config absent or malformed" };
+  if (!/^[0-9a-f]{64}$/.test(sc.pubkey) || !/^[0-9a-f]+$/.test(sc.signature))
+    return { ok: false, detail: "signed_config pubkey/signature not hex" };
+  let sigOk = false;
+  try {
+    const key = crypto.createPublicKey({
+      key: Buffer.concat([SPKI_ED25519_PREFIX, Buffer.from(sc.pubkey, "hex")]),
+      format: "der", type: "spki",
+    });
+    sigOk = crypto.verify(null, Buffer.from(sc.payload, "utf8"), key,
+      Buffer.from(sc.signature, "hex"));
+  } catch { sigOk = false; }
+  if (!sigOk) return { ok: false, detail: "signed_config Ed25519 signature invalid" };
+  let signedPolicy;
+  try { signedPolicy = JSON.parse(sc.payload); } catch { return { ok: false, detail: "signed_config payload not JSON" }; }
+  if (!isDeepStrictEqual(signedPolicy, receipt.kernel_config))
+    return { ok: false, detail: "signed_config payload != kernel_config" };
+  return { ok: true, detail: `signed by ${sc.pubkey.slice(0, 12)}` };
+}
 
 async function verify(receiptPath) {
   let receipt;
@@ -97,6 +139,17 @@ async function verify(receiptPath) {
   //    producing host. (What replay would add and this cannot: independent
   //    re-execution of the kernel output itself.)
   if (unparseable) {
+    // Reduced-scope core (seal-check receipt.js:278-290 parity): the wire line
+    // is not re-parseable, so independent kernel REPLAY is impossible. This
+    // receipt is therefore NEVER "verified" — it is reported REDUCED SCOPE and
+    // returns not-passing (non-zero exit), exactly as seal-check maps
+    // unparseable -> authorised-unparseable (allGood=false). What we CAN still
+    // require, and do: (a) the kernel material is internally consistent, (b) the
+    // kernel's own audit commitment binds to request_sha256, and (c) the policy
+    // the kernel judged under is Ed25519-signed and IS the carried
+    // kernel_config. (a)+(b) alone are pure self-consistency of
+    // attacker-controlled JSON — a forge satisfies them trivially; (c) is what
+    // makes a config-less / unsigned forge fail closed rather than pass.
     let consistent = false;
     try {
       const audit = JSON.parse(JSON.parse(receipt.emitted_bytes).audit);
@@ -108,7 +161,10 @@ async function verify(receiptPath) {
     add("kernel-attested request binding (audit sha256 of the judged bytes equals request_sha256)",
       kernelHash !== null && kernelHash === receipt.request_sha256,
       kernelHash ? kernelHash.slice(0, 12) : "absent from audit");
-    return report(checks, receipt, receiptPath, { unparseable: true });
+    const sig = configSignatureValid(receipt);
+    add("mediated policy Ed25519-signed and equals kernel_config (authority evidence; replay not possible)",
+      sig.ok, sig.detail);
+    return report(checks, receipt, receiptPath, { reducedScope: true });
   }
   const red = await decide(receipt.kernel_config, {
     tool: receipt.tool, args: receipt.arguments, approvals: grants.approvals,
@@ -142,7 +198,7 @@ async function verify(receiptPath) {
   return report(checks, receipt, receiptPath);
 }
 
-function report(checks, receipt, receiptPath, { notMediated = false, unparseable = false } = {}) {
+function report(checks, receipt, receiptPath, { notMediated = false, reducedScope = false } = {}) {
   // Fail closed on an empty check list: `[].every()` is `true`, so without
   // this guard a zero-check report would vouch for a receipt nothing checked.
   // Unreachable through verify() today (every call site adds >=1 check first);
@@ -154,11 +210,26 @@ function report(checks, receipt, receiptPath, { notMediated = false, unparseable
   for (const c of checks) {
     console.log(`  ${c.pass ? "PASS" : "FAIL"}  ${c.name}${c.detail ? "   (" + c.detail + ")" : ""}`);
   }
-  console.log(`  ${notMediated ? "FAIL  NOT MEDIATED (bypass receipt)"
-    : !allGood ? "FAIL  NOT VERIFIED"
-    : unparseable ? "PASS  VERIFIED (kernel-attested request binding: the kernel's audit commits to sha256 of the exact bytes it judged, and it matches request_sha256; wire line not re-parseable, no canonical replay possible)"
-    : "PASS  VERIFIED"}`);
-  return allGood;
+  // A reduced-scope (unparseable-request) receipt is NEVER "VERIFIED": the wire
+  // line could not be re-parsed, so no independent kernel replay was performed.
+  // Even when every reduced check passes it is reported REDUCED SCOPE and
+  // returns not-passing (non-zero exit) — a CI/product gate must not treat it as
+  // verified. This is the P0 fix: the old `unparseable` branch printed
+  // "PASS VERIFIED" and returned allGood=true, so a forged unparseable ALLOW
+  // (self-consistent JSON, no kernel, no signature) was stamped verified. A
+  // reduced check that FAILS (unsigned/forged config, broken binding) is a hard
+  // FAIL, distinct from the honest reduced-scope label. `ok` drives the exit
+  // code (bin/seal: exit 0 iff ok); reduced scope is ok=false either way.
+  let summary, ok;
+  if (notMediated) { summary = "FAIL  NOT MEDIATED (bypass receipt)"; ok = false; }
+  else if (!allGood) { summary = "FAIL  NOT VERIFIED"; ok = false; }
+  else if (reducedScope) {
+    summary = "REDUCED SCOPE (authorised-unparseable): kernel-attested request binding and " +
+      "Ed25519-signed policy only, no independent replay — NOT independently verified";
+    ok = false;
+  } else { summary = "PASS  VERIFIED"; ok = true; }
+  console.log(`  ${summary}`);
+  return ok;
 }
 
 module.exports = { verify, report };
