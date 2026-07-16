@@ -1,0 +1,62 @@
+{
+  "_about": "Machine-readable mirror of docs/VERIFY-PROFILES.md (the prose authority). The fleet differentials key their expected agreement/divergence off this table + each copy's LIVE declared VERIFY_PROFILE — not off hand-named cases. Keep the two files in agreement (pinned by test/verify-profile.test.cjs). Changing a profile, a roster row, or an expected class is a design decision: bump `version` here and in the doc together.",
+  "spec": "docs/VERIFY-PROFILES.md",
+  "version": 1,
+  "declaration_regex": "VERIFY_PROFILE[^\"']*[\"'](P-[A-Z]+)[\"']",
+  "classes": ["VERIFIED", "REDUCED", "UNPINNED", "FAIL"],
+  "profiles": {
+    "P-REF": {
+      "trust_anchor_input": false,
+      "configless_mediated": "accept",
+      "outcome_set": ["VERIFIED", "REDUCED", "FAIL"],
+      "expected": {
+        "pass-pinned": "VERIFIED",
+        "pass-unpinned": "VERIFIED",
+        "configless-parseable": "VERIFIED",
+        "config-reusing-unparseable-forge": "REDUCED",
+        "configless-unparseable-forge": "FAIL",
+        "legit-unparseable": "REDUCED",
+        "pathological-number": "NON-VERIFIED-NO-CRASH",
+        "binding-tamper": "FAIL"
+      }
+    },
+    "P-ENFORCE": {
+      "trust_anchor_input": true,
+      "configless_mediated": "reject",
+      "outcome_set": ["VERIFIED", "REDUCED", "UNPINNED", "FAIL"],
+      "expected": {
+        "pass-pinned": "VERIFIED",
+        "pass-unpinned": "UNPINNED",
+        "configless-parseable": "FAIL",
+        "config-reusing-unparseable-forge": "REDUCED",
+        "configless-unparseable-forge": "FAIL",
+        "legit-unparseable": "REDUCED",
+        "pathological-number": "NON-VERIFIED-NO-CRASH",
+        "binding-tamper": "FAIL"
+      }
+    },
+    "P-SELFAUDIT": {
+      "trust_anchor_input": false,
+      "configless_mediated": "reject",
+      "outcome_set": ["SELF-CONSISTENT", "FAIL"],
+      "expected": {
+        "pass-pinned": "N/A",
+        "pass-unpinned": "SELF-CONSISTENT-IFF-OWN",
+        "configless-parseable": "FAIL",
+        "config-reusing-unparseable-forge": "NEVER-SUCCESS",
+        "configless-unparseable-forge": "NEVER-SUCCESS",
+        "legit-unparseable": "NEVER-SUCCESS",
+        "pathological-number": "NON-SUCCESS-NO-CRASH",
+        "binding-tamper": "FAIL"
+      }
+    }
+  },
+  "roster": {
+    "kit": { "profile": "P-REF", "declaration": "src/verify.cjs" },
+    "seal-check": { "profile": "P-ENFORCE", "declaration": "receipt.js" },
+    "seal-verify-action": { "profile": "P-ENFORCE", "declaration": "lib/pin.js" },
+    "seal-host": { "profile": "P-ENFORCE", "declaration": "rust/src/decision_receipt.rs" },
+    "seal-live-demo": { "profile": "P-ENFORCE", "declaration": "pwa/receipt.js" },
+    "seal-demo": { "profile": "P-SELFAUDIT", "declaration": "public/audit.js" }
+  }
+}

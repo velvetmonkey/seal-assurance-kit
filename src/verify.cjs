@@ -15,6 +15,14 @@ const { isDeepStrictEqual } = require("util");
 const fs = require("fs");
 const path = require("path");
 
+// Declared verification profile of THIS copy (docs/VERIFY-PROFILES.md):
+// P-REF — the reference-kernel lane. No trust-anchor input exists, and a
+// config-less mediated receipt is acceptable (the signed-config-known-gap:
+// the bare kernel lane has no host, so no authority evidence can exist).
+// The fleet differentials key their expected agreement/divergence off this
+// declaration; changing it is a design decision, not a refactor.
+const VERIFY_PROFILE = "P-REF";
+
 // Ed25519 verification of a receipt's signed_config. Proves the mediated policy
 // the kernel judged under was signed by the key the config carries AND that the
 // signed payload IS the carried kernel_config. Host-produced receipts always
@@ -232,4 +240,4 @@ function report(checks, receipt, receiptPath, { notMediated = false, reducedScop
   return ok;
 }
 
-module.exports = { verify, report };
+module.exports = { verify, report, VERIFY_PROFILE };
