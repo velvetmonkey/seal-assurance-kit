@@ -47,8 +47,9 @@ These are profile-independent. A copy that violates any of these is broken no
 matter what it declares.
 
 - **U1 — pathological input never crashes and never passes.** The
-  pathological-number vector (`1e9999999999`, kernel `ff1bfd68` fail-closed
-  build) and its family: the verifier must not throw/abort, and the input must
+  pathological-number vector (`1e9999999999`; the fail-closed guard landed in
+  kernel `ff1bfd68` and is carried forward by `a3790181`) and its family: the
+  verifier must not throw/abort, and the input must
   never class `VERIFIED` (kernel route `block`, never `passthrough`).
   Teeth: `test/pathological-number.*` in every repo; the cross-copy and
   fleet-verify differentials assert no-crash + non-success.
