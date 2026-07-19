@@ -1,6 +1,6 @@
 # VERIFY-PROFILES — the per-use-case verifier contract
 
-Version 1 · 2026-07-16 · Status: normative for every receipt-verifier copy in
+Version 2 · 2026-07-19 · Status: normative for every receipt-verifier copy in
 the seal fleet. Machine-readable mirror: `test/corpus/verify-profiles.json`
 (the differentials load that file; this document is the prose authority — the
 two are kept in agreement by `test/verify-profile.test.cjs`).
@@ -33,7 +33,7 @@ differentials compare:
 | class | meaning | the copy's surface must … |
 |---|---|---|
 | `VERIFIED` | full independent re-derivation passed; the copy's TOP verdict | be the copy's unique success surface (exit 0 / success banner) |
-| `REDUCED` | §11.1 authorised-unparseable: everything the receipt carries verified; no replay was possible | be its own state — never the success surface, never plain invalid (§11.2) |
+| `REDUCED` | verification coverage is honestly incomplete: §11.1 replay was impossible, or a principal attribution lacks independently pinned config authority | be its own state — never the success surface, never plain invalid (§11.2) |
 | `UNPINNED` | authentic + replay-consistent, but operator authority NOT established against a pinned key | be distinct from both `VERIFIED` and `FAIL` |
 | `FAIL` | hard rejection (tamper, forged binding, format violation, bypass) | never be mistakable for success. `NOT MEDIATED` (bypass) is a named sub-label of `FAIL` |
 
@@ -91,20 +91,26 @@ mutation — no hand-crafted third dialects):
 
 Use case: `seal verify` in this kit — the reference verifier for receipts the
 bare kernel lane mints, where no host exists and therefore no authority
-evidence (`signed_config`, operator pin) can exist. Requiring it would make
-the validator reject its own producer's output (the
-`signed-config-known-gap`, `test/corpus/red-corpus.json`).
+evidence (`signed_config`, operator pin) can exist. Requiring it universally
+would make the validator reject its own producer's output (the
+`signed-config-known-gap`, `test/corpus/red-corpus.json`). The interim C1
+exception is principal-bearing input: its attribution may reach the top verdict
+only with an independently supplied operator config-signer pin.
 
 Requirements:
 
-- **REF-1** No trust-anchor input exists; `authority_trusted` is never
-  computed. The copy's success claim is re-derivation + self-consistency,
-  explicitly NOT operator authority.
-- **REF-2** A config-less MEDIATED parseable receipt is acceptable: schema
-  layer accepts, and full re-derivation may class it `VERIFIED`.
-- **REF-3** Outcome set {`VERIFIED`, `REDUCED`, `FAIL`}. `UNPINNED` cannot
-  exist (no pin input). `REDUCED` must be distinct at the copy's primary
-  surface (label); it MAY share a non-zero exit code with `FAIL`.
+- **REF-1** `--expected-config-pubkey` is a conditional trust-anchor input for
+  principal-bearing receipts only. A matching signer may proceed to the top
+  verdict; absent or mismatched authority yields `REDUCED`, never `VERIFIED`
+  and never hard `FAIL` merely for the authority mismatch.
+- **REF-2** A config-less MEDIATED parseable NON-principal receipt is
+  acceptable: schema layer accepts, and full re-derivation may class it
+  `VERIFIED`. A carried `signed_config` is always cryptographically checked on
+  the parseable path; an invalid one is `FAIL`.
+- **REF-3** Outcome set {`VERIFIED`, `REDUCED`, `FAIL`}. Principal authority
+  absence/mismatch maps to `REDUCED`, not a fourth `UNPINNED` class.
+  `REDUCED` is distinct at the primary surface and exit code: 0/4/1 for
+  `VERIFIED`/`REDUCED`/`FAIL`.
 - **REF-4** The unparseable path still requires an Ed25519-signed
   `signed_config` matching `kernel_config` (no replay is possible there, so
   the signature is the only evidence left): config-less unparseable → `FAIL`.
@@ -188,7 +194,7 @@ cross-checks live declarations against this):
 
 | copy | declaration site | profile | primary surface mapping |
 |---|---|---|---|
-| kit `src/verify.cjs` (`bin/seal verify`) | `src/verify.cjs` | `P-REF` | exit 0 `PASS VERIFIED` / exit 1 `REDUCED SCOPE (authorised-unparseable)` / exit 1 `FAIL NOT VERIFIED` · `FAIL NOT MEDIATED` |
+| kit `src/verify.cjs` (`bin/seal verify`) | `src/verify.cjs` | `P-REF` | exit 0 `PASS VERIFIED` / exit 4 `REDUCED SCOPE` (authorised-unparseable or principal authority not established) / exit 1 `FAIL NOT VERIFIED` · `FAIL NOT MEDIATED` |
 | seal-check `receipt.js` (CLI `test/verify-file.cjs` + browser `app.js`) | `receipt.js` | `P-ENFORCE` | CLI exits 0/4/3/1 (+2 usage); browser four states (deployed unpinned → ceiling `UNPINNED`) |
 | seal-verify-action vendored fork (`lib/main.js` → `vendor/…/src/verify.cjs`) | `lib/pin.js` | `P-ENFORCE` | exits 0/4/3/1; statuses `verified`/`reduced-scope`/`unpinned`/`not-mediated`/`not-verified` |
 | seal-host receipt-verifier (embedded re-derivation body + `scripts/v2_receipt_conformance.py` gate) | `rust/src/decision_receipt.rs` | `P-ENFORCE` | conformance gate supplies the pin and delegates to the pinned external verifiers' exit codes |
@@ -206,14 +212,20 @@ is derived from §5 and is what the teeth key off. Prose version:
 
 | input class (§4) | P-REF | P-ENFORCE | P-SELFAUDIT |
 |---|---|---|---|
-| `pass-pinned` | `VERIFIED` (pin ignored — no input) | `VERIFIED` | n/a (no pin input) |
-| `pass-unpinned` | `VERIFIED` | `UNPINNED` | success iff own fresh receipt |
+| `pass-pinned` | `VERIFIED` (these canonical profile rows are non-principal) | `VERIFIED` | n/a (no pin input) |
+| `pass-unpinned` | `VERIFIED` (non-principal) | `UNPINNED` | success iff own fresh receipt |
 | `configless-parseable` | `VERIFIED` | `FAIL` | `FAIL` |
 | `config-reusing-unparseable-forge` | `REDUCED` | `REDUCED` | never success |
 | `configless-unparseable-forge` | `FAIL` | `FAIL` | never success |
 | `legit-unparseable` | `REDUCED` | `REDUCED` | never success (out of scope, SELF-4) |
 | `pathological-number` | non-`VERIFIED`, no crash | non-`VERIFIED`, no crash | non-success, no crash |
 | `binding-tamper` | `FAIL` | `FAIL` | `FAIL` |
+
+P-REF principal extension: a parseable principal receipt with a valid
+`signed_config` is `VERIFIED` only when its signer matches the independently
+supplied operator pin; no pin or a different pin is `REDUCED`; an invalid
+signature is `FAIL`. These are kit-specific RED teeth because the current
+shared canonical fixture set predates the `principal` field.
 
 Agreement/divergence between two copies is DERIVED: same expected class →
 the differential asserts agreement; different expected classes → the

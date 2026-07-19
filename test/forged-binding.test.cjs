@@ -116,7 +116,7 @@ test("a LEGITIMATE unparseable receipt is honest REDUCED SCOPE, not a false fail
   // as verified. But it is NOT invalid/malformed: every reduced check, including
   // the Ed25519-signed config, passes, and the summary is REDUCED SCOPE, never
   // "FAIL NOT VERIFIED". This is the distinction the P0 fix must preserve.
-  assert.notEqual(result.status, 0, "reduced scope is not-passing: " + result.stdout);
+  assert.equal(result.status, 4, "reduced scope has its own exit state: " + result.stdout);
   assert.match(result.stdout, /REDUCED SCOPE \(authorised-unparseable\)/, result.stdout);
   assert.doesNotMatch(result.stdout, /FAIL {2}NOT VERIFIED/,
     "a legitimate unparseable receipt must not be failed as if invalid");

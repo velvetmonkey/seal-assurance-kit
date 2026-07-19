@@ -9,6 +9,10 @@ Honest boundaries. What this kit does and does not assert.
 - Re-running that **same** kernel with the receipt's own policy and call reproduces the
   claimed verdict and the verbatim emitted decision bytes.
 - The canonical request the receipt hashes matches its stated `canonical_request_sha256`.
+- For a receipt carrying `principal`, `PASS VERIFIED` additionally means the
+  valid `signed_config` signer matches the operator config-signing key supplied
+  independently with `--expected-config-pubkey`. A valid self-signature alone
+  has a ceiling of `REDUCED SCOPE`.
 
 If all pass, the receipt is a faithful, reproducible record of what the kernel decided
 for that call under that policy.
@@ -22,6 +26,21 @@ for that call under that policy.
 - Anything about the Lean proofs of the kernel. `asserted_provenance` in the receipt is a
   **labelled assertion** of the source's proof hygiene, NOT verified here and NOT part of
   any hash.
+- Principal-envelope replay or PrincipalBudget ordered-trace replay. Those
+  verifier hooks remain TODOs pending the frozen Fix B signed-message contract.
+
+## Principal receipt export residual (C3)
+
+A principal-bearing receipt carries reusable credential material. It is an
+**audit artifact**, not a capability, and it is **not safe to publish**. Store
+and transmit it as credential-bearing evidence with access controls appropriate
+to the principal and the protected request.
+
+Today the principal envelope binds only `nonce`, `issuedAt`, and the judged
+request line. It does not bind the operator config authority. This interim
+verifier therefore requires an independently pinned config-signing key before
+it will print `PASS VERIFIED` for a principal attribution. The envelope-level
+config-authority binding and exact-line replay land separately via Fix B.
 
 ## Kernel
 

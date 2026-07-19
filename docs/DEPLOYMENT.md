@@ -33,6 +33,19 @@ matches both the receipt's claimed kernel and the audited pin, re-derived the ca
 line and its SHA-256, resolved the policy grants to approval targets, re-ran the decision, and
 compared the emitted decision bytes byte-for-byte.
 
+For a principal-bearing receipt, provision the operator config-signing key
+independently (never copy it from the receipt):
+
+```sh
+node bin/seal verify principal-receipt.json \
+  --expected-config-pubkey "$SEAL_CONFIG_PUBKEY"
+```
+
+No pin or a non-matching pin yields `REDUCED SCOPE` (exit 4), not `PASS
+VERIFIED` and not a hard failure. A malformed or invalid config signature still
+fails with exit 1. Principal receipts carry reusable credential material and
+are not safe to publish; see [../CLAIMS.md](../CLAIMS.md).
+
 ## 3. First FAIL — prove the tool can say no
 
 ```sh
@@ -44,7 +57,7 @@ node bin/seal scan fixtures/tools.json fixtures/policy.json
 
 A tool that cannot fail is theatre. These two failures are the kit doing its job; wire the same
 commands into CI so an uncovered tool or an unverifiable receipt fails your build (exit codes:
-0 pass · 1 fail · 2 usage · 3 internal). For GitHub Actions, `seal-verify-action` packages the
+0 pass · 1 fail · 2 usage · 3 internal · 4 reduced scope). For GitHub Actions, `seal-verify-action` packages the
 same pinned `seal verify` closure as a ready-made CI gate.
 
 ## 3b. Compare two receipts

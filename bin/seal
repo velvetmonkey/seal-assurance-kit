@@ -7,6 +7,7 @@
 //   1  check ran and FAILED (NOT VERIFIED, FAIL, NON-CONFORMANT, collisions found)
 //   2  usage error (unknown command / flag / profile, missing argument)
 //   3  internal error (unexpected exception — not a verdict)
+//   4  REDUCED SCOPE (valid evidence, but not eligible for PASS VERIFIED)
 const path = require("path");
 const readline = require("node:readline");
 
@@ -15,7 +16,9 @@ const KNOWN_PROFILES = ["L0"];
 const HELP = [
   "seal assurance kit",
   "",
-  "  seal verify <receipt.json>    verify a decision receipt (re-derive, trust nothing)",
+  "  seal verify <receipt.json> [--expected-config-pubkey <64-hex>]",
+  "                                verify a decision receipt; principal-bearing",
+  "                                receipts require this out-of-band operator pin",
   "  seal init <manifest.tools.json> [--out <policy.json>]",
   "  seal init --recipe <prod-db|deploy|token-governor|mesh> <manifest.tools.json> [--out <policy.json>]",
   "                                scaffold an exact-name reviewable policy",
@@ -51,7 +54,7 @@ const HELP = [
   "  --version, -V   print the kit version",
   "",
   "  input formats: docs/SCHEMAS.md",
-  "  exit codes: 0 pass · 1 check failed · 2 usage error · 3 internal error",
+  "  exit codes: 0 pass · 1 failed · 2 usage · 3 internal · 4 reduced scope",
 ].join("\n");
 
 function usageError(msg) {
@@ -78,11 +81,26 @@ async function main() {
     process.exit(0);
   }
   if (cmd === "verify") {
-    const f = process.argv[3];
-    if (!f) usageError("usage: seal verify <receipt.json>");
-    const { verify } = require(path.join(__dirname, "../src/verify.cjs"));
-    const ok = await verify(path.resolve(f));
-    process.exit(ok ? 0 : 1);
+    const args = process.argv.slice(3);
+    let f, expectedConfigPubkey;
+    for (let index = 0; index < args.length; index++) {
+      const arg = args[index];
+      if (arg === "--expected-config-pubkey") {
+        if (expectedConfigPubkey !== undefined)
+          usageError("--expected-config-pubkey may be supplied only once");
+        expectedConfigPubkey = args[++index];
+        if (!expectedConfigPubkey)
+          usageError("--expected-config-pubkey requires a 64-lowercase-hex Ed25519 public key");
+      } else if (arg.startsWith("-") || f) {
+        usageError("usage: seal verify <receipt.json> [--expected-config-pubkey <64-hex>]");
+      } else f = arg;
+    }
+    if (!f) usageError("usage: seal verify <receipt.json> [--expected-config-pubkey <64-hex>]");
+    if (expectedConfigPubkey !== undefined && !/^[0-9a-f]{64}$/.test(expectedConfigPubkey))
+      usageError("--expected-config-pubkey requires a 64-lowercase-hex Ed25519 public key");
+    const { verifyDetailed } = require(path.join(__dirname, "../src/verify.cjs"));
+    const result = await verifyDetailed(path.resolve(f), { expectedConfigPubkey });
+    process.exit(result.exitCode);
   }
   if (cmd === "init") {
     const args = process.argv.slice(3);

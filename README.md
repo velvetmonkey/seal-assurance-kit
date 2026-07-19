@@ -80,6 +80,18 @@ node bin/seal adequacy check fixtures/adequacy-pass.json
 Input formats for `scan` and `adequacy` (policy / tools / labels JSON) are
 documented with annotated examples in [docs/SCHEMAS.md](docs/SCHEMAS.md).
 
+Principal-bearing receipts require the operator config-signing key to be
+provisioned independently; never copy the pin from the receipt:
+
+```sh
+node bin/seal verify principal-receipt.json \
+  --expected-config-pubkey "$SEAL_CONFIG_PUBKEY"
+```
+
+Without a matching pin, otherwise valid principal evidence is `REDUCED SCOPE`
+(exit 4), never `PASS VERIFIED`. Principal receipts carry reusable credential
+material and are not safe to publish; see [CLAIMS.md](CLAIMS.md).
+
 ## `seal receipt-diff` — authorization-surface diff
 
 Two receipts can look alike and authorize different effects. `seal receipt-diff A.json B.json`
@@ -122,6 +134,7 @@ a standalone repo later; the implementation lives in `src/receipt-diff.cjs` eith
 | 1 | check ran and **failed**: NOT VERIFIED, scan FAIL (uncovered tools), NON-CONFORMANT, adequacy collision, receipt-diff authorization drift |
 | 2 | usage error: unknown command, flag, or profile; missing argument |
 | 3 | internal error (unexpected exception — not a verdict) |
+| 4 | **REDUCED SCOPE**: valid evidence that is not eligible for `PASS VERIFIED` (including unpinned/wrong-pinned principal authority) |
 
 A `seal scan` exit 1 on a deliberately incomplete policy is the auditor doing
 its job; wire it into CI so new uncovered tools fail the build.

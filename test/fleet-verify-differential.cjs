@@ -83,14 +83,17 @@ function check(name, cond, detail = "") {
 }
 
 // --- classify one verifier's run of one receipt file into a verdict class ----
-// `pinned` controls whether the trust-anchor pin is supplied (P-REF's kit CLI
-// has no pin input; the flag is a no-op there, exactly as the profile says).
-function classifyKit(file /* , pinned */) {
-  const r = spawnSync(process.execPath, [VERIFIERS[0].entry, "verify", file], { encoding: "utf8" });
+// `pinned` controls whether the trust-anchor pin is supplied. P-REF consumes it
+// only for principal-bearing receipts; the canonical fleet inputs here are
+// non-principal, so their established profile outcomes remain unchanged.
+function classifyKit(file, pinned) {
+  const args = [VERIFIERS[0].entry, "verify", file];
+  if (pinned) args.push("--expected-config-pubkey", PIN);
+  const r = spawnSync(process.execPath, args, { encoding: "utf8" });
   const out = `${r.stdout || ""}${r.stderr || ""}`;
   if (r.signal) return "CRASHED:" + r.signal;
   if (r.status === 0 && /PASS {2}VERIFIED/.test(out)) return "VERIFIED";
-  if (r.status !== 0 && /REDUCED SCOPE \(authorised-unparseable\)/.test(out)) return "REDUCED";
+  if (r.status === 4 && /REDUCED SCOPE/.test(out)) return "REDUCED";
   if (r.status !== 0 && /UNPINNED/.test(out)) return "UNPINNED";
   return "FAIL";
 }
