@@ -1,12 +1,12 @@
 {
   "_about": "Machine-readable mirror of docs/VERIFY-PROFILES.md (the prose authority). The fleet differentials key their expected agreement/divergence off this table + each copy's LIVE declared VERIFY_PROFILE — not off hand-named cases. Keep the two files in agreement (pinned by test/verify-profile.test.cjs). Changing a profile, a roster row, or an expected class is a design decision: bump `version` here and in the doc together.",
   "spec": "docs/VERIFY-PROFILES.md",
-  "version": 1,
+  "version": 2,
   "declaration_regex": "VERIFY_PROFILE[^\"']*[\"'](P-[A-Z]+)[\"']",
   "classes": ["VERIFIED", "REDUCED", "UNPINNED", "FAIL"],
   "profiles": {
     "P-REF": {
-      "trust_anchor_input": false,
+      "trust_anchor_input": "principal-only",
       "configless_mediated": "accept",
       "outcome_set": ["VERIFIED", "REDUCED", "FAIL"],
       "expected": {

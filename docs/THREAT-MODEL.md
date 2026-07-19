@@ -44,3 +44,13 @@ These are the four explicit places where Seal's proofs stop. They are strengths 
 2. Egress after allow (P6) — seal mediates the DECISION and records it, not the downstream effect. Closes via: compose with an egress proxy; decision gate by design. (Already in RUST_BRIDGE.md.)
 3. Model vs compiled binary — proofs bind the routing core the code delegates to (Ffi.stepImpl → composed kernels), not a byte-for-byte proof of the compiled wasm; strongest in category. Closes via: the binary differential (Lane C), a wasm-vs-Lean-decide oracle.
 4. Partition liveness — safety (no double-spend) holds unconditionally under partition; liveness is conditional, inherited from crdt-lean. The correct safety-over-availability tradeoff.
+
+## Principal receipt export residual (C3)
+
+A principal-bearing receipt contains reusable credential material. It is an
+access-controlled audit artifact, not a capability, and is not safe to publish.
+The current envelope binds only `nonce`, `issuedAt`, and the judged request line;
+it does not yet bind the operator config authority. `seal verify` therefore
+requires an independently supplied config-signer pin for a principal-bearing
+receipt to reach `PASS VERIFIED`. Exact-line envelope replay and ordered
+PrincipalBudget trace replay remain TODOs pending Fix B.

@@ -41,6 +41,14 @@ court-grade proof of anything on its own. It shows what was authorized, by which
 key, and that the record is intact. Who is responsible for that authorization is
 a question for people, not for the kernel.
 
+**A principal-bearing receipt is not safe to publish.** It carries reusable
+credential material. Treat it as an access-controlled audit artifact, not as a
+capability and not as a public badge. Today its principal envelope binds only
+`nonce`, `issuedAt`, and the judged request line; envelope-level binding to the
+operator config authority lands separately via Fix B. Until then, the kit
+withholds `PASS VERIFIED` unless the receipt's config signer matches an operator
+key pinned independently at verification time.
+
 **It is tamper-evident, not tamper-proof.** Seal's audit chain makes alteration
 *detectable*. It does not make alteration *impossible*. Anyone holding the
 signing keys can produce valid records; Seal's job is to ensure you can tell an

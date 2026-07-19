@@ -16,12 +16,16 @@ const fs = require("fs");
 const path = require("path");
 
 // Declared verification profile of THIS copy (docs/VERIFY-PROFILES.md):
-// P-REF — the reference-kernel lane. No trust-anchor input exists, and a
-// config-less mediated receipt is acceptable (the signed-config-known-gap:
-// the bare kernel lane has no host, so no authority evidence can exist).
-// The fleet differentials key their expected agreement/divergence off this
-// declaration; changing it is a design decision, not a refactor.
+// P-REF — the reference-kernel lane. A config-less NON-PRINCIPAL mediated
+// receipt remains acceptable (the signed-config-known-gap: the bare kernel
+// lane has no host, so no authority evidence can exist). Interim C1 rule:
+// principal-bearing receipts may reach the top verdict only when their config
+// signer matches an independently supplied operator pin; otherwise their
+// ceiling is REDUCED SCOPE. This conditional authority input does not turn the
+// reference lane into the production-wide P-ENFORCE profile.
 const VERIFY_PROFILE = "P-REF";
+
+const EXIT_CODES = Object.freeze({ VERIFIED: 0, FAIL: 1, REDUCED: 4 });
 
 // Ed25519 verification of a receipt's signed_config. Proves the mediated policy
 // the kernel judged under was signed by the key the config carries AND that the
@@ -33,12 +37,9 @@ const VERIFY_PROFILE = "P-REF";
 //
 // TRUST ANCHOR (stated honestly): this establishes that the config is
 // internally SIGNED and self-consistent, NOT that the signer is a trusted
-// authority — `seal verify` takes no trust root, so unlike seal-check it cannot
-// compute `authority_trusted` against a pinned key set. A self-signed config
-// with a matching kernel_config would pass this check; the REDUCED SCOPE label
-// (never "verified") is what keeps the claim honest for a signed-but-unpinned
-// config. Requiring a trust anchor (`--trusted <keys>`) is the strictly stronger
-// follow-up; this check already fails the config-less forge outright.
+// authority. For a principal-bearing receipt, authority is established only by
+// separately comparing sc.pubkey with `--expected-config-pubkey`; self-signing
+// is never sufficient for PASS VERIFIED.
 const SPKI_ED25519_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 function configSignatureValid(receipt) {
   const sc = receipt.signed_config;
@@ -64,17 +65,35 @@ function configSignatureValid(receipt) {
   return { ok: true, detail: `signed by ${sc.pubkey.slice(0, 12)}` };
 }
 
-async function verify(receiptPath) {
+function principalAuthority(receipt, expectedConfigPubkey) {
+  const signer = receipt.signed_config && receipt.signed_config.pubkey;
+  if (expectedConfigPubkey === undefined) {
+    return { trusted: false, detail: "no pinned operator config-signing key supplied" };
+  }
+  if (typeof expectedConfigPubkey !== "string" || !/^[0-9a-f]{64}$/.test(expectedConfigPubkey)) {
+    return { trusted: false, detail: "pinned operator config-signing key is not 64 lowercase hex" };
+  }
+  if (signer !== expectedConfigPubkey) {
+    return {
+      trusted: false,
+      detail: `config signer ${String(signer).slice(0, 12)} does not match pinned operator key ${expectedConfigPubkey.slice(0, 12)}`,
+    };
+  }
+  return { trusted: true, detail: `pinned operator key ${expectedConfigPubkey.slice(0, 12)}` };
+}
+
+async function verifyDetailed(receiptPath, { expectedConfigPubkey } = {}) {
   let receipt;
   try {
     receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
   } catch (e) {
     console.error(`FAIL  cannot read receipt: ${e.message}`);
-    return false;
+    return { ok: false, outcome: "fail", exitCode: EXIT_CODES.FAIL };
   }
   const F = await import("file://" + path.resolve(__dirname, "../kernel/receipt-format.js"));
   const checks = [];
   const add = (name, pass, detail = "") => checks.push({ name, pass, detail });
+  const addScope = (name, detail = "") => checks.push({ name, pass: null, detail });
 
   // The kernel's own commitment to the bytes it judged: Host/Audit.lean puts
   // sha256 of the exact judged line into the audit inside emitted_bytes.
@@ -91,13 +110,13 @@ async function verify(receiptPath) {
   //    stored-line-vs-derived-line equality). Malformed => never reaches the kernel.
   const shape = F.validateReceipt(receipt);
   add(`schema valid (${shape.version || "unrecognized"})`, shape.ok, shape.errors.join("; "));
-  if (!shape.ok) return report(checks, receipt, receiptPath);
+  if (!shape.ok) return reportOutcome(checks, receipt, receiptPath);
 
   // 1. Bypass: seal was removed from the path. No kernel verdict exists.
   if (receipt.bypass) {
     add("mediated (a kernel verdict exists)", false,
       "bypass receipt — NOT MEDIATED; nothing to verify, and its ALLOW is not a kernel verdict");
-    return report(checks, receipt, receiptPath, { notMediated: true });
+    return reportOutcome(checks, receipt, receiptPath, { notMediated: true });
   }
 
   // 2. Kernel identity: the binary on disk is what the receipt names AND the audited build.
@@ -135,7 +154,31 @@ async function verify(receiptPath) {
   const grants = F.capabilityTargetsFromPolicy(receipt.kernel_config, receipt.granted_capabilities);
   add("grants resolve to approval targets", grants.errors.length === 0,
     grants.errors.join("; ") || `${grants.approvals.length} target(s), ${grants.opaque} opaque`);
-  if (grants.errors.length > 0) return report(checks, receipt, receiptPath);
+  if (grants.errors.length > 0) return reportOutcome(checks, receipt, receiptPath);
+
+  // 4a. A carried signed_config is always checked, including on the parseable
+  // path. The config-less parseable P-REF lane remains accepted only when the
+  // receipt is NON-principal. A principal receipt cannot turn a missing or
+  // invalid signature into mere reduced scope: invalid evidence is a hard FAIL.
+  const principalBearing = Object.prototype.hasOwnProperty.call(receipt, "principal");
+  if (unparseable || principalBearing || receipt.signed_config !== undefined) {
+    const sig = configSignatureValid(receipt);
+    add("mediated policy Ed25519-signed and equals kernel_config", sig.ok, sig.detail);
+  }
+
+  // Interim C1 authority gate. A valid self-signature authenticates bytes but
+  // does not authorise a principal attribution. Missing or mismatched operator
+  // authority lowers the ceiling to REDUCED SCOPE; it is not a hard failure.
+  let principalAuthorityReduced = false;
+  if (principalBearing) {
+    const authority = principalAuthority(receipt, expectedConfigPubkey);
+    if (authority.trusted) {
+      add("principal config signer matches pinned operator authority", true, authority.detail);
+    } else {
+      principalAuthorityReduced = true;
+      addScope("principal config authority not established", authority.detail);
+    }
+  }
 
   // 5. Re-derive through the same kernel with the receipt's own policy + call.
   //    Impossible on an unparseable-request receipt: check instead that the
@@ -169,11 +212,16 @@ async function verify(receiptPath) {
     add("kernel-attested request binding (audit sha256 of the judged bytes equals request_sha256)",
       kernelHash !== null && kernelHash === receipt.request_sha256,
       kernelHash ? kernelHash.slice(0, 12) : "absent from audit");
-    const sig = configSignatureValid(receipt);
-    add("mediated policy Ed25519-signed and equals kernel_config (authority evidence; replay not possible)",
-      sig.ok, sig.detail);
-    return report(checks, receipt, receiptPath, { reducedScope: true });
+    return reportOutcome(checks, receipt, receiptPath, {
+      reducedScope: true,
+      reducedReason: "unparseable",
+    });
   }
+
+  // TODO(Fix B): when the frozen principal-envelope contract lands, consume
+  // the receipt-carried raw envelope fields and replay the exact signed line.
+  // This Fix A deliberately checks only config authority; it does not invent
+  // the producer carry/replay contract ahead of Fix B.
   const red = await decide(receipt.kernel_config, {
     tool: receipt.tool, args: receipt.arguments, approvals: grants.approvals,
     now: receipt.now ?? 1000,
@@ -203,20 +251,34 @@ async function verify(receiptPath) {
   add("emitted decision bytes byte-identical modulo the kernel request commitment",
     substitutable && red.raw.replace(replayedHash, storedKernelHash) === receipt.emitted_bytes);
 
-  return report(checks, receipt, receiptPath);
+  // TODO(Fix B / C2): replay PrincipalBudget from the receipt's ordered trace
+  // once Fix B freezes the trace/envelope receipt contract. Single-call replay
+  // here must not be described as PrincipalBudget trace verification.
+
+  return reportOutcome(checks, receipt, receiptPath, {
+    reducedScope: principalAuthorityReduced,
+    reducedReason: principalAuthorityReduced ? "principal-authority" : undefined,
+  });
 }
 
-function report(checks, receipt, receiptPath, { notMediated = false, reducedScope = false } = {}) {
+async function verify(receiptPath, options) {
+  return (await verifyDetailed(receiptPath, options)).ok;
+}
+
+function reportOutcome(checks, receipt, receiptPath,
+  { notMediated = false, reducedScope = false, reducedReason } = {}) {
   // Fail closed on an empty check list: `[].every()` is `true`, so without
   // this guard a zero-check report would vouch for a receipt nothing checked.
   // Unreachable through verify() today (every call site adds >=1 check first);
   // pinned as an invariant in test/verify-vacuity.test.cjs.
-  const allGood = checks.length > 0 && checks.every((c) => c.pass);
+  const allGood = checks.length > 0 &&
+    checks.every((c) => c.pass === true || c.pass === null);
   console.log(`seal verify  ${receiptPath}`);
   const kid = (receipt.kernel_identity || {}).wasm_sha256;
   console.log(`  receipt verdict: ${receipt.verdict}   kernel: ${kid ? kid.slice(0, 12) : "?"}`);
   for (const c of checks) {
-    console.log(`  ${c.pass ? "PASS" : "FAIL"}  ${c.name}${c.detail ? "   (" + c.detail + ")" : ""}`);
+    const label = c.pass === null ? "SCOPE" : c.pass ? "PASS" : "FAIL";
+    console.log(`  ${label}  ${c.name}${c.detail ? "   (" + c.detail + ")" : ""}`);
   }
   // A reduced-scope (unparseable-request) receipt is NEVER "VERIFIED": the wire
   // line could not be re-parsed, so no independent kernel replay was performed.
@@ -226,18 +288,30 @@ function report(checks, receipt, receiptPath, { notMediated = false, reducedScop
   // "PASS VERIFIED" and returned allGood=true, so a forged unparseable ALLOW
   // (self-consistent JSON, no kernel, no signature) was stamped verified. A
   // reduced check that FAILS (unsigned/forged config, broken binding) is a hard
-  // FAIL, distinct from the honest reduced-scope label. `ok` drives the exit
-  // code (bin/seal: exit 0 iff ok); reduced scope is ok=false either way.
-  let summary, ok;
-  if (notMediated) { summary = "FAIL  NOT MEDIATED (bypass receipt)"; ok = false; }
-  else if (!allGood) { summary = "FAIL  NOT VERIFIED"; ok = false; }
+  // FAIL, distinct from the honest reduced-scope label. The CLI preserves all
+  // three states as exit 0 VERIFIED / exit 4 REDUCED / exit 1 FAIL.
+  let summary, outcome;
+  if (notMediated) { summary = "FAIL  NOT MEDIATED (bypass receipt)"; outcome = "fail"; }
+  else if (!allGood) { summary = "FAIL  NOT VERIFIED"; outcome = "fail"; }
   else if (reducedScope) {
-    summary = "REDUCED SCOPE (authorised-unparseable): kernel-attested request binding and " +
-      "Ed25519-signed policy only, no independent replay — NOT independently verified";
-    ok = false;
-  } else { summary = "PASS  VERIFIED"; ok = true; }
+    summary = reducedReason === "principal-authority"
+      ? "REDUCED SCOPE (principal config authority not established): receipt is replay-consistent, " +
+        "but the principal attribution is not backed by the pinned operator config-signing key — NOT VERIFIED"
+      : "REDUCED SCOPE (authorised-unparseable): kernel-attested request binding and " +
+        "Ed25519-signed policy only, no independent replay — NOT independently verified";
+    outcome = "reduced";
+  } else { summary = "PASS  VERIFIED"; outcome = "verified"; }
   console.log(`  ${summary}`);
-  return ok;
+  return {
+    ok: outcome === "verified",
+    outcome,
+    exitCode: outcome === "verified" ? EXIT_CODES.VERIFIED
+      : outcome === "reduced" ? EXIT_CODES.REDUCED : EXIT_CODES.FAIL,
+  };
 }
 
-module.exports = { verify, report, VERIFY_PROFILE };
+function report(checks, receipt, receiptPath, options) {
+  return reportOutcome(checks, receipt, receiptPath, options).ok;
+}
+
+module.exports = { verify, verifyDetailed, report, VERIFY_PROFILE, EXIT_CODES };
