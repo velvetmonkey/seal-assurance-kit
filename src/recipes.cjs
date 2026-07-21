@@ -93,7 +93,7 @@ function markSafetyRole(policy, toolName, role, notice) {
   rule._comment = rule._comment ? `${rule._comment}; ${label}` : label;
 }
 
-// The verified a3790181 parser (Seal.parsePolicyBundle) hard-errors on unknown
+// The verified d7d81e27 parser (Seal.parsePolicyBundle) hard-errors on unknown
 // keys at section and entry level, so `_comment` may no longer live inside kernel
 // sections. The ONE kernel-tolerated in-file home for review markers is a safety
 // rule's interior (rule-level strictness is a named follow-up); section notes are
