@@ -48,7 +48,7 @@ matter what it declares.
 
 - **U1 — pathological input never crashes and never passes.** The
   pathological-number vector (`1e9999999999`; the fail-closed guard landed in
-  kernel `ff1bfd68` and is carried forward by `d7d81e27`) and its family: the
+  kernel `ff1bfd68` and is carried forward by `0b5e7925`) and its family: the
   verifier must not throw/abort, and the input must
   never class `VERIFIED` (kernel route `block`, never `passthrough`).
   Teeth: `test/pathological-number.*` in every repo; the cross-copy and
@@ -81,7 +81,7 @@ mutation — no hand-crafted third dialects):
 | `configless-parseable` | same receipt with `signed_config` deleted |
 | `config-reusing-unparseable-forge` | kernel-less unparseable ALLOW reusing a real signed config (fleet P0 forge) |
 | `configless-unparseable-forge` | the same forge with `signed_config`/`kernel_config` deleted |
-| `legit-unparseable` | the real §11.1 fixture (native seal-host mint, `1e309` line) |
+| `legit-unparseable` | the real §11.1 fixture (native seal-host mint, argument-less call) |
 | `pathological-number` | `1e9999999999` injected into `arguments` (re-derived hash mismatches; exercises U1) |
 | `binding-tamper` | flip one hex digit of a binding hash |
 

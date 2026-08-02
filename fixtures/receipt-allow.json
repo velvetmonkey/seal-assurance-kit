@@ -18,14 +18,14 @@
     "approval_identity": {
       "channel": "interactive"
     },
-    "policy_hash": "50d98711427502f8386fbe19baa9bfadb6c30d4e702828c6e39f78e97b8aec07"
+    "policy_hash": "76fff1942ae3a599eaa3b50b0c66df782c7eef29e95ca4c69d298dbf1dcd8a2c"
   },
   "certs": [
     {
       "kernel": "safety",
       "verdict": "allow",
-      "reason": "6bff1759cf3c00f781f0b15d428f4cf84e59f8b10be48dd4dd742175a3e6f984",
-      "certHash": "8945306314002133198"
+      "reason": "a1fb55c62c23d6ceb4a4df45e9d33f0e051f8985aab3364ff033051104f42379",
+      "certHash": "8801008679152932153"
     },
     {
       "kernel": "temporal",
@@ -40,9 +40,9 @@
       "certHash": "359907721516049332"
     }
   ],
-  "emitted_bytes": "{\"audit\":\"{\\\"certs\\\":[{\\\"certHash\\\":\\\"8945306314002133198\\\",\\\"kernel\\\":\\\"safety\\\",\\\"reason\\\":\\\"6bff1759cf3c00f781f0b15d428f4cf84e59f8b10be48dd4dd742175a3e6f984\\\",\\\"verdict\\\":\\\"allow\\\"},{\\\"certHash\\\":\\\"12756644985251018087\\\",\\\"kernel\\\":\\\"temporal\\\",\\\"reason\\\":\\\"trace ok (1 events)\\\",\\\"verdict\\\":\\\"allow\\\"},{\\\"certHash\\\":\\\"359907721516049332\\\",\\\"kernel\\\":\\\"convergence\\\",\\\"reason\\\":\\\"convergent op admitted: orset.add\\\",\\\"verdict\\\":\\\"allow\\\"}],\\\"epoch\\\":1,\\\"request_sha256\\\":\\\"c423e524f58c6bfff5e750dabd761795af1afc08ba895dd2322729f424f941ca\\\",\\\"tool\\\":\\\"store.update\\\",\\\"verdict\\\":\\\"allow\\\"}\",\"route\":\"forward\"}",
+  "emitted_bytes": "{\"audit\":\"{\\\"certs\\\":[{\\\"certHash\\\":\\\"8801008679152932153\\\",\\\"kernel\\\":\\\"safety\\\",\\\"reason\\\":\\\"a1fb55c62c23d6ceb4a4df45e9d33f0e051f8985aab3364ff033051104f42379\\\",\\\"verdict\\\":\\\"allow\\\"},{\\\"certHash\\\":\\\"12756644985251018087\\\",\\\"kernel\\\":\\\"temporal\\\",\\\"reason\\\":\\\"trace ok (1 events)\\\",\\\"verdict\\\":\\\"allow\\\"},{\\\"certHash\\\":\\\"359907721516049332\\\",\\\"kernel\\\":\\\"convergence\\\",\\\"reason\\\":\\\"convergent op admitted: orset.add\\\",\\\"verdict\\\":\\\"allow\\\"}],\\\"epoch\\\":1,\\\"request_sha256\\\":\\\"c423e524f58c6bfff5e750dabd761795af1afc08ba895dd2322729f424f941ca\\\",\\\"tool\\\":\\\"store.update\\\",\\\"verdict\\\":\\\"allow\\\"}\",\"route\":\"forward\"}",
   "kernel_identity": {
-    "wasm_sha256": "d7d81e277ba0b5e9df385129d86abf6f7469e6da2a65bb2ec35626caa44ea2be",
+    "wasm_sha256": "0b5e792500592b56847f70b1e27e47aecdc65023c7c59fd79695102c465f26ec",
     "self_verified": true,
     "note": "Binary identity of the evaluator actually executed. Hashed in your browser from the loaded bytes and compared to a pinned constant. This is the ONLY thing verified here."
   },
@@ -78,16 +78,7 @@
           },
           "target": [
             {
-              "literal": "db"
-            },
-            {
-              "arg": "database"
-            },
-            {
-              "literal": "write"
-            },
-            {
-              "arg": "sql"
+              "full_arguments": true
             }
           ]
         },
@@ -99,7 +90,7 @@
           },
           "target": [
             {
-              "literal": "pay"
+              "full_arguments": true
             }
           ]
         },
@@ -111,7 +102,7 @@
           },
           "target": [
             {
-              "literal": "revoke"
+              "full_arguments": true
             }
           ]
         },
@@ -123,7 +114,7 @@
           },
           "target": [
             {
-              "literal": "store"
+              "full_arguments": true
             }
           ]
         },
@@ -135,7 +126,7 @@
           },
           "target": [
             {
-              "literal": "key"
+              "full_arguments": true
             }
           ]
         },
@@ -174,7 +165,7 @@
   },
   "granted_capabilities": [
     {
-      "target": "6bff1759cf3c00f781f0b15d428f4cf84e59f8b10be48dd4dd742175a3e6f984"
+      "target": "a1fb55c62c23d6ceb4a4df45e9d33f0e051f8985aab3364ff033051104f42379"
     }
   ]
 }

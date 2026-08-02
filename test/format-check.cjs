@@ -18,6 +18,7 @@ function check(name, got, want) {
 
 (async () => {
   const F = await import("file://" + path.resolve(__dirname, "..", "kernel", "receipt-format.js"));
+  const C = await import("file://" + path.resolve(__dirname, "..", "kernel", "seal-config.js"));
 
   // --- frozen spec vectors (identical set to seal-check's test) -------------
   check("sha256Hex(\"\")",
@@ -92,9 +93,9 @@ function check(name, got, want) {
 
   // --- capability convention matches the kit's own fixture grants -----------
   const allow = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "fixtures", "receipt-allow.json"), "utf8"));
-  check("allow-fixture opaque grant == capabilityTarget convention",
+  check("allow-fixture opaque grant == full-arguments target convention",
     (allow.granted_capabilities || []).map((g) => g.target)[0],
-    F.capabilityTarget("store.update", ["store"]));
+    C.guardTarget("store.update", { op: "orset.add", key: "k1" }));
 
   // --- cross-tool fixture (produced by seal-check) validates here too -------
   const cross = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "fixtures", "receipt-crosstool.json"), "utf8"));
@@ -103,8 +104,8 @@ function check(name, got, want) {
     JSON.stringify([v.ok, v.version]), JSON.stringify([true, "v2"]));
 
   // --- unparseable-request fixture: REAL seal-host receipt (§11.1) -----------
-  // Produced by seal-host main @ 3a74dbf on the pinned 1e309 line
-  // (test/host_path.rs:722 form). Not hand-written; not regenerable by this
+  // Produced by the native seal-host mint on the pinned argument-less call
+  // (rust/tests/host_path.rs). Not hand-written; not regenerable by this
   // kit's producer — its provenance is the host, recorded in the commit that
   // added it.
   const unpFx = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "fixtures", "receipt-unparseable.json"), "utf8"));

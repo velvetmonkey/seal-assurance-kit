@@ -26,7 +26,7 @@ async function makeReceipt(config, call) {
     { tool: "db.execute", args: { database: "prod", sql: "drop table users" }, approvals: [] });
   const allow = await makeReceipt(cfg.CFG_STANDARD,
     { tool: "store.update", args: { op: "orset.add", key: "k1" },
-      approvals: [cfg.stableHash(["store.update", "store"])] });
+      approvals: [cfg.guardTarget("store.update", { op: "orset.add", key: "k1" })] });
   fs.writeFileSync(path.join(outDir, "receipt-block.json"), JSON.stringify(block, null, 2) + "\n");
   fs.writeFileSync(path.join(outDir, "receipt-allow.json"), JSON.stringify(allow, null, 2) + "\n");
   // The crosstool fixture is a byte-copy of the allow receipt (same as
