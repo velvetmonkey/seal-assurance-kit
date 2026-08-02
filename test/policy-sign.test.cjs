@@ -37,8 +37,8 @@ test("policy signer validates and emits a verifiable exact-payload envelope", ()
   assert.equal(result.policyHash.length, 64);
 });
 
-// --- 7-kernel bundle round-trip (d7d81e27 vocabulary) ------------------------
-// The verified parser (mcp-seal-dev Seal/PolicyBundle.lean, kernel d7d81e27)
+// --- 7-kernel bundle round-trip (0b5e7925 vocabulary) ------------------------
+// The verified parser (mcp-seal-dev Seal/PolicyBundle.lean, kernel 0b5e7925)
 // accepts one declarative section per non-Safety kernel with per-section
 // `enabled`, and hard-errors on unknown keys at section and entry level. These
 // teeth prove the kit's sign+validate accepts exactly that shape, the signed

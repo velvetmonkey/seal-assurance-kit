@@ -114,6 +114,19 @@ test("version discriminator: unrecognized receipt shape is REJECTED", () => {
   );
 });
 
+test("authorization-decision discriminator selects the complete v2 validation path", () => {
+  const current = loadFixture("receipt-allow.json");
+  delete current.seal_receipt;
+  current.record_type = "seal.authorization-decision";
+  current.record_version = 2;
+  assert.deepEqual(validateReceipt(current), { ok: true, version: "v2", errors: [] });
+
+  current.canonical_request_sha256 = "not-hex";
+  const refused = validateReceipt(current);
+  assert.equal(refused.ok, false);
+  assert.ok(refused.errors.some((e) => e.includes("canonical_request_sha256")));
+});
+
 // ---- B4: proof-catchable table, emitted as a build artefact ----
 test("B4 proof-catchable table (artefact)", () => {
   const rows = MANIFEST.vectors.map((v) => ({
