@@ -57,8 +57,9 @@ node bin/seal scan fixtures/tools.json fixtures/policy.json
 
 A tool that cannot fail is theatre. These two failures are the kit doing its job; wire the same
 commands into CI so an uncovered tool or an unverifiable receipt fails your build (exit codes:
-0 pass · 1 fail · 2 usage · 3 internal · 4 reduced scope). For GitHub Actions, `seal-verify-action` packages the
-same pinned `seal verify` closure as a ready-made CI gate.
+0 pass · 1 fail · 2 usage · 3 internal · 4 reduced scope). For GitHub Actions, `seal-verify-action` runs a
+sha256-pinned, downstream-stricter fork of the `seal verify` closure as a ready-made CI gate
+(it additionally requires a valid `signed_config`; see seal-verify-action/VENDORED.md).
 
 ## 3b. Compare two receipts
 
@@ -82,7 +83,7 @@ npm test          # verify + fixture-drift + bypass-expect-fail + format + adequ
 
 ```sh
 git clone https://github.com/velvetmonkey/seal-live-demo && cd seal-live-demo
-bash scripts/run_local.sh        # real containers; ends "ASSERT OK: 15/15"
+bash scripts/run_local.sh        # real containers; ends "ASSERT OK: 17/17"
 ```
 
 The run leaves receipts in `evidence/receipts.jsonl` (each line's `.receipt`-bearing phases are
