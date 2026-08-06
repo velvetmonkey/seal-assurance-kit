@@ -83,8 +83,9 @@ governs what it is allowed to *do*.
 So the page is not all shadow, here is the light, stated just as narrowly:
 
 - **Authorization match.** A guarded action is forwarded only if it matches a
-  live, single-use human approval bound to the exact request. No match, no
-  action.
+  live, single-use approval record bound to the exact request. No match, no
+  action. (That the record was minted by the human you intend is a declared
+  identity/key-custody assumption, not part of the theorem.)
 - **Tamper-evident replay.** Every decision emits a signed record from which the
   decision can be independently re-derived. Alter the record and re-derivation
   fails.
