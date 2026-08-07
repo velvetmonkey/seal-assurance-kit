@@ -83,9 +83,11 @@ function principalAuthority(receipt, expectedConfigPubkey) {
 }
 
 async function verifyDetailed(receiptPath, { expectedConfigPubkey } = {}) {
+  let receiptDocument;
   let receipt;
   try {
-    receipt = JSON.parse(fs.readFileSync(receiptPath, "utf8"));
+    receiptDocument = fs.readFileSync(receiptPath, "utf8");
+    receipt = JSON.parse(receiptDocument);
   } catch (e) {
     console.error(`FAIL  cannot read receipt: ${e.message}`);
     return { ok: false, outcome: "fail", exitCode: EXIT_CODES.FAIL };
@@ -108,7 +110,7 @@ async function verifyDetailed(receiptPath, { expectedConfigPubkey } = {}) {
 
   // 0. Schema first (version discriminator, field table, hard split,
   //    stored-line-vs-derived-line equality). Malformed => never reaches the kernel.
-  const shape = F.validateReceipt(receipt);
+  const shape = F.validateReceipt(receiptDocument);
   add(`schema valid (${shape.version || "unrecognized"})`, shape.ok, shape.errors.join("; "));
   if (!shape.ok) return reportOutcome(checks, receipt, receiptPath);
 
