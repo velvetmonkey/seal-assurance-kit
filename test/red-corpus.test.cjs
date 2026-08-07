@@ -119,12 +119,32 @@ test("authorization-decision discriminator selects the complete v2 validation pa
   delete current.seal_receipt;
   current.record_type = "seal.authorization-decision";
   current.record_version = 2;
-  assert.deepEqual(validateReceipt(current), { ok: true, version: "v2", errors: [] });
+  assert.deepEqual(validateReceipt(current), { ok: true, version: "v2", errors: [], document_checked: false });
 
   current.canonical_request_sha256 = "not-hex";
   const refused = validateReceipt(current);
   assert.equal(refused.ok, false);
   assert.ok(refused.errors.some((e) => e.includes("canonical_request_sha256")));
+});
+
+test("conflicting version-discriminator families are refused before classification", () => {
+  const current = loadFixture("receipt-allow.json");
+  current.record_type = "seal.authorization-decision";
+  current.record_version = 2;
+  const refused = validateReceipt(current);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.version, null);
+  assert.match(refused.errors.join("; "), /conflicting version discriminators: seal_receipt \+ record_type\/record_version/);
+});
+
+test("received document with a duplicated discriminator is refused before JSON.parse can collapse it", () => {
+  const current = loadFixture("receipt-allow.json");
+  const document = JSON.stringify(current).replace(
+    '"seal_receipt":"v2"', '"seal_receipt":"v2","seal_receipt":"v2"');
+  const refused = validateReceipt(document);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.document_checked, true);
+  assert.match(refused.errors.join("; "), /version discriminator "seal_receipt" occurs 2 times/);
 });
 
 // ---- B4: proof-catchable table, emitted as a build artefact ----
