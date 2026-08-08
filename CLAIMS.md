@@ -44,8 +44,8 @@ config-authority binding and exact-line replay land separately via Fix B.
 
 ## Kernel
 
-The verifier re-derives through the vendored public seal kernel (`kernel/wasm/seal.wasm`,
-Apache-2.0, from `seal-check`). Pinned sha256 is checked on every run; a mismatch fails
+The verifier re-derives through the vendored seal kernel (`kernel/wasm/seal.wasm`,
+Apache-2.0, from the private `seal-check`). Pinned sha256 is checked on every run; a mismatch fails
 verification loudly rather than silently trusting a swapped binary.
 
 ## `seal adequacy` claims

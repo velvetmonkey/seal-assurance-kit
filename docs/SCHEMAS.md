@@ -49,7 +49,7 @@ is the tool working, not breaking.
 
 `seal policy sign` validates and signs the policy-v2 TrustedConfig the verified
 kernel loads (`Seal.parsePolicyBundle`, mcp-seal-dev `Seal/PolicyBundle.lean`;
-narrative: seal-host `docs/POLICY-V2.md` §"The 7-kernel bundle"). Top-level keys:
+narrative: mcp-seal-dev `docs/POLICY-V2.md` §"The 7-kernel bundle"). Top-level keys:
 `epoch` (integer ≥ 1), optional `server`, required `safety`, and one optional
 declarative section per non-Safety kernel: `temporal`, `consensus`,
 `convergence`, `calibration`, `linear`, `budget`.
@@ -69,7 +69,7 @@ declarative section per non-Safety kernel: `temporal`, `consensus`,
   host-layer replay-store pointer).
 
 The validated participation report (ACTIVE / PRESENT-BUT-INACTIVE / ABSENT)
-is printed before signing; see `seal policy sign --help`.
+is printed before signing; run `node bin/seal policy sign` with no arguments for usage.
 
 ## 2. Tool catalogue (`seal scan`, first argument)
 

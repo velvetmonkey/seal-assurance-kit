@@ -16,4 +16,4 @@
 
 **A-CR**: The named assumption that the deployed target commitment is collision-resistant for the relevant inputs.
 
-**Conformance corpus**: The finite set of traces used to compare model, native, wasm, Rust, and JavaScript behavior byte-for-byte.
+**Conformance corpus**: The finite set of traces used to compare model, native `.so`, wasm, and deployed Rust host behavior byte-for-byte (the record chain additionally re-derived in JavaScript by `seal_log.mjs`).

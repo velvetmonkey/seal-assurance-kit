@@ -71,10 +71,12 @@ Mandatory non-claims (canonical copy: [docs/LIMITATIONS.md](docs/LIMITATIONS.md)
 ```sh
 npm test                                          # full suite; leaves the working tree untouched
 node bin/seal verify fixtures/receipt-block.json  # exit 0: PASS VERIFIED
-node bin/seal scan fixtures/tools.json fixtures/policy.json
+node bin/seal scan fixtures/tools.json fixtures/policy-v2.json
 # ^ expected output: FAIL, exit 1. The sample policy deliberately leaves three
 #   mutating tools uncovered (file.write, http.post, jira.deleteIssue) — scan
 #   exists to catch exactly this. A fully covered catalogue exits 0.
+#   (fixtures/policy.json is the legacy pre-TrustedConfig shape; scanning it
+#   FAILs earlier, at the schema gate: "TRUSTED CONFIG INVALID".)
 node bin/seal adequacy check fixtures/adequacy-pass.json
 ```
 
@@ -85,7 +87,10 @@ Principal-bearing receipts require the operator config-signing key to be
 provisioned independently; never copy the pin from the receipt:
 
 ```sh
-node bin/seal verify principal-receipt.json \
+# <your-receipt>.json: a principal-bearing receipt from your own seal-host deployment
+# (none is shipped here — principal receipts carry credential material);
+# SEAL_CONFIG_PUBKEY: your operator config-signing public key, 64 lowercase hex.
+node bin/seal verify <your-receipt>.json \
   --expected-config-pubkey "$SEAL_CONFIG_PUBKEY"
 ```
 
