@@ -48,7 +48,7 @@ matter what it declares.
 
 - **U1 — pathological input never crashes and never passes.** The
   pathological-number vector (`1e9999999999`; the fail-closed guard landed in
-  kernel `ff1bfd68` and is carried forward by `0b5e7925`) and its family: the
+  kernel `ff1bfd68` and is carried forward by `28bb3ae7`) and its family: the
   verifier must not throw/abort, and the input must
   never class `VERIFIED` (kernel route `block`, never `passthrough`).
   Teeth: `test/pathological-number.*` in every repo; the cross-copy and

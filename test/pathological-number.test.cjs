@@ -6,7 +6,7 @@
 // the fleet: the native seal-host aborted (Json.parse evaluating 10^exponent)
 // while the OLD d3067bc0 wasm returned classify-default passthrough — a
 // mediation BYPASS in the browser lane. The ff1bfd68 repin closed it (guard
-// carried forward unchanged by the current 0b5e7925 kernel):
+// carried forward unchanged by the current 28bb3ae7 kernel):
 // Seal.JsonUtil.wireNumbersSafe refuses the line BEFORE Json.parse, and the
 // refuse route is `block`. This test drives the SHIPPED vendored wasm directly
 // (the exact bytes bin/seal / seal-check load) and pins: block, never
