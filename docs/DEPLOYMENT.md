@@ -51,7 +51,7 @@ are not safe to publish; see [../CLAIMS.md](../CLAIMS.md).
 ```sh
 node bin/seal verify fixtures/receipt-bypass.json
 # FAIL  NOT MEDIATED (bypass receipt)   → exit 1
-node bin/seal scan fixtures/tools.json fixtures/policy.json
+node bin/seal scan fixtures/tools.json fixtures/policy-v2.json
 # FAIL, exit 1 — the sample policy deliberately leaves three mutating tools uncovered.
 ```
 

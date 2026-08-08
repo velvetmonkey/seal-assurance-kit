@@ -1,0 +1,18 @@
+{
+  "epoch": 1,
+  "safety": {
+    "approval": {
+      "control_file": "/tmp/seal-approvals.ndjson",
+      "ttl_seconds": 120
+    },
+    "tools": [
+      { "name": "db.query", "mode": "allow", "match": { "type": "always" } },
+      { "name": "db.execute", "mode": "guarded", "match": { "type": "always" }, "target": [{ "full_arguments": true }] },
+      { "name": "payments.send", "mode": "guarded", "match": { "type": "always" }, "target": [{ "full_arguments": true }] },
+      { "name": "secret.read", "mode": "guarded", "match": { "type": "always" }, "target": [{ "full_arguments": true }] },
+      { "name": "shell.exec", "mode": "deny", "match": { "type": "always" } },
+      { "name": "file.read", "mode": "allow", "match": { "type": "always" } },
+      { "name": "search.docs", "mode": "allow", "match": { "type": "always" } }
+    ]
+  }
+}

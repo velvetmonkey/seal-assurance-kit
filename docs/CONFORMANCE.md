@@ -21,6 +21,6 @@ Local checks for this repo:
 ```sh
 npm test
 node bin/seal verify fixtures/receipt-block.json
-node bin/seal scan fixtures/tools.json fixtures/policy.json
+node bin/seal scan fixtures/tools.json fixtures/policy-v2.json
 node bin/seal adequacy check fixtures/adequacy-pass.json
 ```

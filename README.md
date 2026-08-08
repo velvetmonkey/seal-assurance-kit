@@ -71,10 +71,12 @@ Mandatory non-claims (canonical copy: [docs/LIMITATIONS.md](docs/LIMITATIONS.md)
 ```sh
 npm test                                          # full suite; leaves the working tree untouched
 node bin/seal verify fixtures/receipt-block.json  # exit 0: PASS VERIFIED
-node bin/seal scan fixtures/tools.json fixtures/policy.json
+node bin/seal scan fixtures/tools.json fixtures/policy-v2.json
 # ^ expected output: FAIL, exit 1. The sample policy deliberately leaves three
 #   mutating tools uncovered (file.write, http.post, jira.deleteIssue) — scan
 #   exists to catch exactly this. A fully covered catalogue exits 0.
+#   (fixtures/policy.json is the legacy pre-TrustedConfig shape; scanning it
+#   FAILs earlier, at the schema gate: "TRUSTED CONFIG INVALID".)
 node bin/seal adequacy check fixtures/adequacy-pass.json
 ```
 
