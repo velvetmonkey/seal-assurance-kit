@@ -87,7 +87,10 @@ Principal-bearing receipts require the operator config-signing key to be
 provisioned independently; never copy the pin from the receipt:
 
 ```sh
-node bin/seal verify principal-receipt.json \
+# <your-receipt>.json: a principal-bearing receipt from your own seal-host deployment
+# (none is shipped here — principal receipts carry credential material);
+# SEAL_CONFIG_PUBKEY: your operator config-signing public key, 64 lowercase hex.
+node bin/seal verify <your-receipt>.json \
   --expected-config-pubkey "$SEAL_CONFIG_PUBKEY"
 ```
 

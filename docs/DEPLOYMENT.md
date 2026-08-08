@@ -37,7 +37,10 @@ For a principal-bearing receipt, provision the operator config-signing key
 independently (never copy it from the receipt):
 
 ```sh
-node bin/seal verify principal-receipt.json \
+# <your-receipt>.json: a principal-bearing receipt from your own seal-host deployment
+# (none is shipped here — principal receipts carry credential material);
+# SEAL_CONFIG_PUBKEY: your operator config-signing public key, 64 lowercase hex.
+node bin/seal verify <your-receipt>.json \
   --expected-config-pubkey "$SEAL_CONFIG_PUBKEY"
 ```
 
@@ -83,7 +86,8 @@ npm test          # verify + fixture-drift + bypass-expect-fail + format + adequ
 
 ```sh
 git clone https://github.com/velvetmonkey/seal-live-demo && cd seal-live-demo
-bash scripts/run_local.sh        # real containers; ends "ASSERT OK: 17/17"
+bash scripts/run_local.sh        # real containers; ends "ASSERT OK: <n>/<n>"
+                                 # (the count is computed at run time; 19/19 measured 2026-08-08)
 ```
 
 The run leaves receipts in `evidence/receipts.jsonl` (each line's `.receipt`-bearing phases are

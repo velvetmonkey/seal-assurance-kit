@@ -197,7 +197,7 @@ cross-checks live declarations against this):
 | kit `src/verify.cjs` (`bin/seal verify`) | `src/verify.cjs` | `P-REF` | exit 0 `PASS VERIFIED` / exit 4 `REDUCED SCOPE` (authorised-unparseable or principal authority not established) / exit 1 `FAIL NOT VERIFIED` · `FAIL NOT MEDIATED` |
 | seal-check `receipt.js` (CLI `test/verify-file.cjs` + browser `app.js`) | `receipt.js` | `P-ENFORCE` | CLI exits 0/4/3/1 (+2 usage); browser four states (deployed unpinned → ceiling `UNPINNED`) |
 | seal-verify-action vendored fork (`lib/main.js` → `vendor/…/src/verify.cjs`) | `lib/pin.js` | `P-ENFORCE` | exits 0/4/3/1; statuses `verified`/`reduced-scope`/`unpinned`/`not-mediated`/`not-verified` |
-| seal-host receipt-verifier (embedded re-derivation body + `scripts/v2_receipt_conformance.py` gate) | `rust/src/decision_receipt.rs` | `P-ENFORCE` | conformance gate supplies the pin and delegates to the pinned external verifiers' exit codes |
+| seal-host receipt-verifier (embedded re-derivation body + `scripts/v2_receipt_conformance.py` gate) | `rust/src/authorization_decision.rs` | `P-ENFORCE` | conformance gate supplies the pin and delegates to the pinned external verifiers' exit codes |
 | seal-live-demo PWA (`pwa/receipt.js`) | `pwa/receipt.js` | `P-ENFORCE` | UI tones; exhibit deployment (ENF-4): unpinned, and a pinned-authorised result renders `PIN NOT ACCEPTED HERE` |
 | seal-demo (`public/audit.js`) | `public/audit.js` | `P-SELFAUDIT` | `allGood` boolean → PASS/FAIL chips; tamper beat |
 
