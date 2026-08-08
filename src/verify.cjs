@@ -41,6 +41,22 @@ const EXIT_CODES = Object.freeze({ VERIFIED: 0, FAIL: 1, REDUCED: 4 });
 // separately comparing sc.pubkey with `--expected-config-pubkey`; self-signing
 // is never sufficient for PASS VERIFIED.
 const SPKI_ED25519_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+// Object B uses the same Ed25519 public-key encoding, but signs the canonical
+// receipt preimage supplied by receipt-format.js rather than signed_config.
+// The format layer stays dependency-free and fails closed unless its caller
+// injects this primitive.
+function receiptSignatureValid(message, signature, publicKey) {
+  try {
+    const key = crypto.createPublicKey({
+      key: Buffer.concat([SPKI_ED25519_PREFIX, Buffer.from(publicKey)]),
+      format: "der", type: "spki",
+    });
+    return crypto.verify(null, Buffer.from(message), key, Buffer.from(signature));
+  } catch {
+    return false;
+  }
+}
+
 function configSignatureValid(receipt) {
   const sc = receipt.signed_config;
   if (!sc || typeof sc.payload !== "string" || typeof sc.signature !== "string" ||
@@ -110,7 +126,7 @@ async function verifyDetailed(receiptPath, { expectedConfigPubkey } = {}) {
 
   // 0. Schema first (version discriminator, field table, hard split,
   //    stored-line-vs-derived-line equality). Malformed => never reaches the kernel.
-  const shape = F.validateReceipt(receiptDocument);
+  const shape = F.validateReceipt(receiptDocument, { ed25519Verify: receiptSignatureValid });
   add(`schema valid (${shape.version || "unrecognized"})`, shape.ok, shape.errors.join("; "));
   if (!shape.ok) return reportOutcome(checks, receipt, receiptPath);
 

@@ -11,7 +11,7 @@
   "scripts": {
     "gen": "node src/gen-receipt.cjs",
     "verify": "node bin/seal verify fixtures/receipt-block.json && node bin/seal verify fixtures/receipt-allow.json && node bin/seal verify fixtures/receipt-crosstool.json",
-    "test": "npm run --silent verify && npm run --silent test:drift && npm run --silent test:bypass && npm run --silent test:format && npm run --silent test:adequacy && npm run --silent test:receipt-diff && npm run --silent test:policy-sign && npm run --silent test:forged-binding && npm run --silent test:verify-authority-gate && npm run --silent test:scan-pin && npm run --silent test:scan-v2&& npm run --silent test:recipes && npm run --silent test:connect && npm run --silent test:red-corpus && npm run --silent test:pathological && npm run --silent test:vacuity && npm run --silent test:verify-profile",
+    "test": "npm run --silent verify && npm run --silent test:drift && npm run --silent test:bypass && npm run --silent test:format && npm run --silent test:v3 && npm run --silent test:adequacy && npm run --silent test:receipt-diff && npm run --silent test:policy-sign && npm run --silent test:forged-binding && npm run --silent test:verify-authority-gate && npm run --silent test:scan-pin && npm run --silent test:scan-v2&& npm run --silent test:recipes && npm run --silent test:connect && npm run --silent test:red-corpus && npm run --silent test:pathological && npm run --silent test:vacuity && npm run --silent test:verify-profile",
     "test:red-corpus": "node --test test/red-corpus.test.cjs",
     "test:vacuity": "node --test test/verify-vacuity.test.cjs test/conformance-vacuity.test.cjs",
     "test:fleet-differential": "node test/fleet-copy-differential.cjs",
@@ -21,6 +21,7 @@
     "test:scan-pin": "node --test test/scan-pin.test.cjs",
     "test:drift": "node test/fixture-drift.cjs",
     "test:format": "node test/format-check.cjs",
+    "test:v3": "node --test test/receipt-format-v3.test.cjs",
     "test:adequacy": "node test/adequacy-check.cjs",
     "test:adequacy-bridge": "node scripts/adequacy_bridge.mjs",
     "test:bypass": "node test/expect-fail.cjs node bin/seal verify fixtures/receipt-bypass.json",
