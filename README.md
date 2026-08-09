@@ -33,7 +33,7 @@ Prints `PASS VERIFIED` for a good receipt and `FAIL` (exit 1) for an uncovered s
 > **Claim:** policy-covered request-effects recognised by the compatible MCP boundary reach the downstream child MCP server only after every applicable Lean kernel returns Allow. Effects configured as guarded additionally require a matching live approval record. Seam failures block; every mediated decision emits replayable evidence.
 > **Non-claim:** the deployed host is not proved end to end, and canonical parser rejection is not currently the runtime gate. Host `ApprovalRecord` tokens are a separate signed channel from the v2 kernel-defined approval tuple. “Canonical” in Seal names the pinned kernel byte rule, not RFC 8785/JCS. Seal verifies the configured authorization evidence. Whether that evidence represents the intended human, device or service is an identity and key-custody assumption, not a proved property.
 <!-- truthbox:end -->
-> Map: [EVALUATOR-START.md](https://github.com/velvetmonkey/seal/blob/main/EVALUATOR-START.md) · profile detail: [PROFILE.md](https://github.com/velvetmonkey/seal-host/blob/main/PROFILE.md) — both in private repos; the links resolve only for authorised evaluators.
+> Map: [EVALUATOR-START.md](https://github.com/velvetmonkey/seal/blob/main/EVALUATOR-START.md) · profile detail: [PROFILE.md](https://github.com/velvetmonkey/seal-host/blob/main/PROFILE.md) — both in public repos; the links resolve for everyone.
 
 ## What happens when you need evidence for a boundary review
 
@@ -147,9 +147,9 @@ its job; wire it into CI so new uncovered tools fail the build.
 
 ## The Seal family
 
-_All Seal-family repositories are currently private; these links resolve only for authorised evaluators._
+_The Seal fleet repositories are public; these links resolve for everyone. `witness-check` remains proprietary._
 
-- [seal](https://github.com/velvetmonkey/seal): the private umbrella story, product map, and evaluator path.
+- [seal](https://github.com/velvetmonkey/seal): the public umbrella story, product map, and evaluator path.
 - [mcp-seal-dev](https://github.com/velvetmonkey/mcp-seal-dev): The rulebook, proven.
 - [seal-host](https://github.com/velvetmonkey/seal-host): The guard at the door.
 - [seal-check](https://github.com/velvetmonkey/seal-check): Don't trust. Verify.
@@ -162,7 +162,7 @@ _All Seal-family repositories are currently private; these links resolve only fo
 
 - [What Seal is NOT](docs/WHAT-SEAL-IS-NOT.md) — read this first
 - [Deployment: install to first PASS/FAIL](docs/DEPLOYMENT.md)
-- [Family claims matrix](https://github.com/velvetmonkey/seal/blob/main/docs/CLAIMS-MATRIX.md) · [family architecture map](https://github.com/velvetmonkey/seal/blob/main/docs/ARCHITECTURE.md) (private umbrella)
+- [Family claims matrix](https://github.com/velvetmonkey/seal/blob/main/docs/CLAIMS-MATRIX.md) · [family architecture map](https://github.com/velvetmonkey/seal/blob/main/docs/ARCHITECTURE.md) (public umbrella)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Input schemas: policy / tools / labels](docs/SCHEMAS.md)
 - [Threat model](docs/THREAT-MODEL.md)
