@@ -12,3 +12,5 @@
 > **Claim:** policy-covered request-effects recognised by the compatible MCP boundary reach the downstream child MCP server only after every applicable Lean kernel returns Allow. Effects configured as guarded additionally require a matching live approval record. Seam failures block; every mediated decision emits replayable evidence.
 > **Non-claim:** the deployed host is not proved end to end, and canonical parser rejection is not currently the runtime gate. Host `ApprovalRecord` tokens are a separate signed channel from the v2 kernel-defined approval tuple. “Canonical” in Seal names the pinned kernel byte rule, not RFC 8785/JCS. Seal verifies the configured authorization evidence. Whether that evidence represents the intended human, device or service is an identity and key-custody assumption, not a proved property.
 <!-- truthbox:end -->
+
+> **Family role:** tested effect-commitment sufficiency. seal-assurance-kit carries the finite refinement analysis and its concrete pre-v2 collision; v2's `args_hash` closes that collision. The proprietary `witness-check` analyzer is not rerunnable by readers. This is tested evidence, not a proof of sufficiency.

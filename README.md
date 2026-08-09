@@ -6,6 +6,8 @@
 
 `seal verify` re-derives a receipt. `seal scan` finds unguarded tools (and exits 1). `seal test` replays the corpus. `seal adequacy` checks whether your evidence actually separates the labels. Output is boring, rerun-able, and honest.
 
+**Family framing — tested sufficiency.** seal-assurance-kit serves the effect-commitment limb: sufficiency is **tested**, not proven, by finite refinement analysis. The pre-v2 field set failed on a concrete collision—two different effects were indistinguishable through the committed fields—and v2's `args_hash` closes that collision. The `witness-check` analyzer is proprietary and readers cannot rerun it. This kit protects effect evidence and does not claim to read intent.
+
 ## Quick start: first PASS
 
 **30-second showcase — the family's fastest PASS**
