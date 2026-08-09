@@ -7,7 +7,7 @@ rerunnable; nothing depends on trusting this document.
 
 - **Node.js 22** (the CI-tested version; ≥18 generally works). No npm dependencies — the kit is
   zero-dependency by design; `npm install` is not required.
-- **Access.** The Seal family is currently private; cloning works only for authorised evaluators.
+- **Access.** The Seal fleet is public; cloning these repositories does not require special evaluator access.
 - For the live demo (optional, recommended): **Docker with `docker compose`**.
 - Nothing else. No API keys, no network calls at verify time: `seal verify` re-derives decisions
   locally against the vendored, hash-pinned kernel.
@@ -103,7 +103,7 @@ the wasm kernel re-derive it, or open it in `seal-check`.
 ## 6. Deploying the boundary itself
 
 The kit *checks* boundaries; it does not run one. The deployable gateway is
-[`seal-host`](https://github.com/velvetmonkey/seal-host) (private): a Rust MCP host that requires
+[`seal-host`](https://github.com/velvetmonkey/seal-host) (public): a Rust MCP host that requires
 a **signed** policy config and an approval channel at startup, and routes every guarded call
 through the proven kernel. Start from `seal-host/README.md` ("Verify in five minutes") and
 `seal-host/docs/ARCHITECTURE.md`. Honest scope for what deployment gets you — and does not —
