@@ -4,8 +4,8 @@ Honest boundaries. What this kit does and does not assert.
 
 ## `seal verify` claims
 
-- The kernel binary that produced the receipt is **byte-identical** to the one named in
-  the receipt AND to the pinned audited build (`sha256`).
+- The kernel binary supplied to the verifier is **byte-identical** to the hash named in
+  the receipt and to the supplied pinned hash (`sha256`); this verifier does not audit that pinned build.
 - Re-running that **same** kernel with the receipt's own policy and call reproduces the
   claimed verdict and the verbatim emitted decision bytes.
 - The canonical request the receipt hashes matches its stated `canonical_request_sha256`.
