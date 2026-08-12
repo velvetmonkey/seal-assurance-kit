@@ -1,6 +1,6 @@
 {
   "name": "seal-assurance-kit",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Assurance kit for MCP tool mediation: verify decision receipts, test boundary conformance, audit policy coverage, and check finite monitor adequacy.",
   "bin": {
     "seal-assure": "bin/seal",
