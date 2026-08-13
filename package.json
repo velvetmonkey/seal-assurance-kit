@@ -21,7 +21,7 @@
     "test:scan-pin": "node --test test/scan-pin.test.cjs",
     "test:drift": "node test/fixture-drift.cjs",
     "test:format": "node test/format-check.cjs",
-    "test:v3": "node --test test/receipt-format-v3.test.cjs",
+    "test:v3": "node --test test/receipt-format-v3.test.cjs test/object-b-domain-v2.test.cjs",
     "test:adequacy": "node test/adequacy-check.cjs",
     "test:adequacy-bridge": "node scripts/adequacy_bridge.mjs",
     "test:bypass": "node test/expect-fail.cjs node bin/seal verify fixtures/receipt-bypass.json",

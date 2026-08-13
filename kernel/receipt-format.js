@@ -24,10 +24,20 @@ export const APPROVAL_CHANNELS = ["file", "interactive", "ed25519"];
 // accept (and a future witness protocol may emit) witnessed_external.
 export const RELEASE_STATUSES = ["PENDING", "UNKNOWN", "RELEASED", "NOT_APPLICABLE"];
 export const DURABILITY_CLASSES = ["asserted_local_fsync", "witnessed_external", "unknown"];
-// §12.2 Object B signature domain. The wire `signature.domain` field carries
-// this 16-char name; the signing preimage appends one 0x00 (17 bytes total).
-// NOT the v1 optional live-demo HMAC `signature`, NOT `signed_config`.
-export const RECEIPT_SIGNATURE_DOMAIN = "seal.object-b/v1";
+// §12.2 Object B signature domains. Evidence issued under v1 remains valid;
+// v2 is the one authorised migration that adds the three-artifact shape. The
+// claimed domain selects the signing preimage, so neither signature can be
+// relabelled as the other. NOT the v1 optional live-demo HMAC `signature`, NOT
+// `signed_config`.
+export const RECEIPT_SIGNATURE_DOMAIN_V1 = "seal.object-b/v1";
+export const RECEIPT_SIGNATURE_DOMAIN_V2 = "seal.object-b/v2";
+export const RECEIPT_SIGNATURE_DOMAINS = [
+  RECEIPT_SIGNATURE_DOMAIN_V1,
+  RECEIPT_SIGNATURE_DOMAIN_V2,
+];
+// Backward-compatible producer default: callers that do not select a domain
+// continue to mint the historical v1 preimage.
+export const RECEIPT_SIGNATURE_DOMAIN = RECEIPT_SIGNATURE_DOMAIN_V1;
 // Host audit lines (seal-host/Host/Audit.lean) speak lowercase; receipts never do.
 export const HOST_AUDIT_VERDICT_MAP = { allow: "ALLOW", deny: "BLOCK" };
 
@@ -717,9 +727,14 @@ function base64Bytes(input, alphabet) {
   return out.subarray(0, n);
 }
 
-// §12.2 preimage:  "seal.object-b/v1" || 0x00 || u64_be(len(bytes)) || bytes
-// where bytes = the compact JSON of the record with `signature` removed, in
-// the record's OWN stored key order.
+// §12.2 v1 preimage: domain || 0x00 || u64_be(len(bytes)) || bytes, where
+// bytes = the compact JSON of the record with `signature` removed, in the
+// record's OWN stored key order.
+//
+// §12.2 v2 preimage: domain || 0x00 followed by prefix-free byte locks for
+// Object A, the optional Approval Statement, unsigned Object B, release status,
+// operation id and durability class. This is a different protocol, not merely
+// a v1 domain-string substitution.
 //
 // THE preserve_order CRUX: the producer serializes with serde_json's
 // preserve_order feature, so the covered bytes are in producer INSERTION
@@ -731,17 +746,82 @@ function base64Bytes(input, alphabet) {
 // out of that order cannot be re-serialized byte-identically; (2) numbers
 // outside the exact-double range (|n| >= 2^53, or any non-shortest float
 // spelling) lose their source bytes at JSON.parse.
-export function receiptSignaturePreimage(record) {
+function unsignedObjectB(record) {
   const unsigned = {};
   for (const k of Object.keys(record)) if (k !== "signature") unsigned[k] = record[k];
-  const body = new TextEncoder().encode(JSON.stringify(unsigned));
-  const out = new Uint8Array(17 + 8 + body.length);
-  out.set(new TextEncoder().encode(RECEIPT_SIGNATURE_DOMAIN)); // 16 chars…
-  out[16] = 0; // …plus the trailing NUL: SIGNATURE_DOMAIN is 17 bytes.
+  return new TextEncoder().encode(JSON.stringify(unsigned));
+}
+
+function receiptSignaturePreimageV1(record) {
+  const body = unsignedObjectB(record);
+  const domainBytes = new TextEncoder().encode(RECEIPT_SIGNATURE_DOMAIN_V1);
+  const bodyOffset = domainBytes.length + 1 + 8;
+  const out = new Uint8Array(bodyOffset + body.length);
+  out.set(domainBytes);
+  out[domainBytes.length] = 0;
   let len = body.length;
-  for (let i = 24; i >= 17; i--) { out[i] = len % 256; len = Math.floor(len / 256); }
-  out.set(body, 25);
+  for (let i = bodyOffset - 1; i > domainBytes.length; i--) {
+    out[i] = len % 256;
+    len = Math.floor(len / 256);
+  }
+  out.set(body, bodyOffset);
   return out;
+}
+
+function canonicalBase64Bytes(value, label) {
+  if (typeof value !== "string" ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value))
+    throw new Error(`bad ${label} base64`);
+  const bytes = base64Bytes(value, B64_STD);
+  if (bytes === null) throw new Error(`bad ${label} base64`);
+  return bytes;
+}
+
+function lockBlob(out, bytes) {
+  for (const byte of bytes) out.push(0, byte);
+  out.push(1);
+}
+
+function receiptSignaturePreimageV2(record) {
+  const artifacts = record?.signed_artifacts;
+  if (!isObj(artifacts))
+    throw new Error("signed receipt lacks signed_artifacts (Object A and Approval Statement)");
+  const artifactKeys = Object.keys(artifacts).sort();
+  const expectedKeys = artifacts.approval_statement === undefined
+    ? ["encoding", "object_a"]
+    : ["approval_statement", "encoding", "object_a"];
+  if (JSON.stringify(artifactKeys) !== JSON.stringify(expectedKeys))
+    throw new Error("signed_artifacts: exactly encoding, object_a and optional approval_statement required");
+  if (artifacts.encoding !== "base64")
+    throw new Error("unrecognised signed_artifacts encoding");
+  const objectA = canonicalBase64Bytes(artifacts.object_a, "Object A");
+  const approval = artifacts.approval_statement == null
+    ? null : canonicalBase64Bytes(artifacts.approval_statement, "Approval Statement");
+  const releaseTags = { PENDING: 4, UNKNOWN: 5, RELEASED: 6, NOT_APPLICABLE: 7 };
+  const durabilityTags = { asserted_local_fsync: 8, witnessed_external: 9, unknown: 10 };
+  const releaseTag = releaseTags[record.release_status];
+  if (releaseTag === undefined) throw new Error("bad release_status");
+  if (typeof record.operation_id !== "string") throw new Error("signed receipt lacks operation_id");
+  const durabilityTag = durabilityTags[record.durability_class];
+  if (durabilityTag === undefined) throw new Error("bad durability_class");
+
+  const out = [...new TextEncoder().encode(RECEIPT_SIGNATURE_DOMAIN_V2), 0];
+  lockBlob(out, objectA);
+  if (approval === null) out.push(2);
+  else { out.push(3); lockBlob(out, approval); }
+  lockBlob(out, unsignedObjectB(record));
+  out.push(releaseTag);
+  lockBlob(out, new TextEncoder().encode(record.operation_id));
+  out.push(durabilityTag);
+  return Uint8Array.from(out);
+}
+
+export function receiptSignaturePreimage(record, domain = RECEIPT_SIGNATURE_DOMAIN) {
+  if (domain === RECEIPT_SIGNATURE_DOMAIN_V1)
+    return receiptSignaturePreimageV1(record);
+  if (domain === RECEIPT_SIGNATURE_DOMAIN_V2)
+    return receiptSignaturePreimageV2(record);
+  throw new Error(`unsupported Object B signature domain: ${domain}`);
 }
 
 // §12.1 operation-state bind: sha256 of the exact compact serde_json bytes
@@ -766,8 +846,8 @@ export function verifyReceiptSignature(record, ed25519Verify) {
   }
   if (JSON.stringify(Object.keys(s).sort()) !== JSON.stringify(SIGNATURE_KEYS_SORTED))
     errors.push("signature: exactly the members domain,algorithm,public_key,key_id,encoding,value required");
-  if (s.domain !== RECEIPT_SIGNATURE_DOMAIN)
-    errors.push(`signature.domain: must be ${RECEIPT_SIGNATURE_DOMAIN}`);
+  if (!RECEIPT_SIGNATURE_DOMAINS.includes(s.domain))
+    errors.push(`signature.domain: must be one of ${RECEIPT_SIGNATURE_DOMAINS.join("|")}`);
   if (s.algorithm !== "Ed25519") errors.push("signature.algorithm: must be Ed25519");
   if (s.encoding !== "base64url-nopad") errors.push("signature.encoding: must be base64url-nopad");
   if (typeof s.public_key !== "string" || !HEX64.test(s.public_key))
@@ -783,8 +863,14 @@ export function verifyReceiptSignature(record, ed25519Verify) {
       errors.push("signature.key_id: does not equal sha256 of the public key bytes");
     } else if (typeof ed25519Verify !== "function") {
       errors.push("signature: UNVERIFIED — v3 validation requires an Ed25519 primitive; pass opts.ed25519Verify(message, signature, publicKey) (fail closed, never skipped)");
-    } else if (ed25519Verify(receiptSignaturePreimage(record), sigBytes, pub) !== true) {
-      errors.push("signature.value: Ed25519 verification failed over the seal.object-b/v1 preimage (record was mutated after signing, or signed by other bytes)");
+    } else {
+      let preimage;
+      try { preimage = receiptSignaturePreimage(record, s.domain); }
+      catch (error) {
+        errors.push(`signature.value: cannot construct ${s.domain} preimage — ${error.message}`);
+      }
+      if (preimage && ed25519Verify(preimage, sigBytes, pub) !== true)
+        errors.push(`signature.value: Ed25519 verification failed over the ${s.domain} preimage (record was mutated after signing, signed under another Object B domain, or signed by other bytes)`);
     }
   }
   return { receipt_signature_valid: errors.length === 0, errors };

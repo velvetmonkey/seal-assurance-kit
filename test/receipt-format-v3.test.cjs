@@ -15,8 +15,9 @@ function ed25519Verify(message, signature, publicKey) {
   return crypto.verify(null, Buffer.from(message), key, Buffer.from(signature));
 }
 
-async function signedV3Block() {
+async function signedV3Block(domain) {
   const F = await import("file://" + path.resolve(__dirname, "../kernel/receipt-format.js"));
+  domain ||= F.RECEIPT_SIGNATURE_DOMAIN;
   const v2 = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../fixtures/receipt-block.json"), "utf8"));
   delete v2.seal_receipt;
   const record = {
@@ -26,12 +27,17 @@ async function signedV3Block() {
     release_status: "NOT_APPLICABLE",
     operation_id: "ab".repeat(32),
     durability_class: "asserted_local_fsync",
+    signed_artifacts: {
+      encoding: "base64",
+      object_a: Buffer.from("object-a").toString("base64"),
+      approval_statement: Buffer.from("approval-statement").toString("base64"),
+    },
   };
   const { privateKey, publicKey } = crypto.generateKeyPairSync("ed25519");
   const publicKeyRaw = publicKey.export({ format: "der", type: "spki" }).subarray(-32);
-  const signature = crypto.sign(null, Buffer.from(F.receiptSignaturePreimage(record)), privateKey);
+  const signature = crypto.sign(null, Buffer.from(F.receiptSignaturePreimage(record, domain)), privateKey);
   record.signature = {
-    domain: F.RECEIPT_SIGNATURE_DOMAIN,
+    domain,
     algorithm: "Ed25519",
     public_key: publicKeyRaw.toString("hex"),
     key_id: F.sha256Hex(publicKeyRaw),
@@ -50,6 +56,33 @@ test("P-REF recognizes and cryptographically validates a config-less v3 BLOCK", 
       receipt_signature_valid: result.receipt_signature_valid, document_checked: result.document_checked },
     { ok: true, version: "v3", errors: [], receipt_signature_valid: true, document_checked: true },
   );
+});
+
+test("P-REF recognizes and cryptographically validates a v2-domain v3 BLOCK", async () => {
+  const { F, record } = await signedV3Block("seal.object-b/v2");
+  const result = F.validateReceipt(JSON.stringify(record), { ed25519Verify });
+  assert.deepEqual(
+    { ok: result.ok, version: result.version, errors: result.errors,
+      receipt_signature_valid: result.receipt_signature_valid, document_checked: result.document_checked },
+    { ok: true, version: "v3", errors: [], receipt_signature_valid: true, document_checked: true },
+  );
+});
+
+test("Object B domains cannot be relabelled across v1 and v2", async () => {
+  for (const [signedDomain, claimedDomain] of [
+    ["seal.object-b/v1", "seal.object-b/v2"],
+    ["seal.object-b/v2", "seal.object-b/v1"],
+  ]) {
+    const { F, record } = await signedV3Block(signedDomain);
+    record.signature.domain = claimedDomain;
+    const result = F.validateReceipt(JSON.stringify(record), { ed25519Verify });
+    assert.equal(result.ok, false);
+    assert.equal(result.receipt_signature_valid, false);
+    assert.match(
+      result.errors.join("; "),
+      new RegExp(`signature\\.value: Ed25519 verification failed over the ${claimedDomain.replace("/", "\\/")} preimage`),
+    );
+  }
 });
 
 test("v3 fails closed without an Ed25519 primitive", async () => {
