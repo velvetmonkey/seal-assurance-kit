@@ -19,3 +19,4 @@ jobs:
             echo "npm test mutated tracked files:"; git status --porcelain; exit 1
           fi
       - run: node scripts/claims-drift.mjs
+      - run: node --test test/claims-drift.test.mjs
