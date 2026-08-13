@@ -26,6 +26,12 @@ const BLOCKS = [
     canonical: "docs/TRUTH-BOX.md", mirrors: ["README.md"] },
 ];
 
+const CLAIM_MANIFEST = [
+  ["CLAIMS.md", "this verifier does not audit that pinned build."],
+  ["docs/THREAT-MODEL.md", "Lane C runs a wasm-vs-interpreted-Lean differential in seal-host CI over a fixed corpus; it is evidence over that corpus, not a universal binary-equals-model proof."],
+  ["docs/WHAT-SEAL-IS-NOT.md", "named by `scripts/claims-drift.mjs`; if this page and that block ever disagree, that"],
+];
+
 function extract(file, begin, end) {
   let text;
   try {
@@ -84,6 +90,14 @@ for (const blk of BLOCKS) {
       }
     }
   }
+}
+
+for (const [file, claim] of CLAIM_MANIFEST) {
+  let text;
+  try { text = readFileSync(resolve(ROOT, file), "utf8"); }
+  catch (e) { console.error(`ERROR  ${file}: ${e.message}`); process.exit(2); }
+  if (text.includes(claim)) console.log(`PASS  ${file} contains repaired claim`);
+  else { drift = true; console.error(`FAIL  ${file} missing repaired claim: ${claim}`); }
 }
 
 if (drift) {
