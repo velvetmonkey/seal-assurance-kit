@@ -6,8 +6,8 @@ Most security tools lead with what they promise and bury what they don't. Seal
 does the opposite, because the boundary of the claim *is* the product. A proof
 you cannot state the limits of is a marketing claim wearing a lab coat. This
 page states the limits in plain language. The machine-checked version lives in
-[LIMITATIONS.md](LIMITATIONS.md) and is enforced identical across every surface
-by `scripts/claims-drift.mjs`; if this page and that block ever disagree, that
+[LIMITATIONS.md](LIMITATIONS.md) and is enforced identical across the three surfaces
+named by `scripts/claims-drift.mjs`; if this page and that block ever disagree, that
 block wins.
 
 ## The one-line version
