@@ -96,7 +96,9 @@ test("P0: a forged unparseable ALLOW (no kernel replay, no signed config) is NOT
   const result = runVerify(forgedUnparseableAllow());
   assert.notEqual(result.status, 0,
     "forged unparseable ALLOW must not exit 0: " + result.stdout + result.stderr);
-  assert.doesNotMatch(result.stdout, /PASS {2}VERIFIED/, "the forge must never be stamped VERIFIED");
+  assert.doesNotMatch(result.stdout,
+    /PASS {2}VERIFIED \(bundled self-check; not independent verification\)/,
+    "the forge must never be stamped VERIFIED");
   assert.match(result.stdout, /FAIL {2}NOT VERIFIED/,
     "a config-less forge is a hard FAIL, not merely reduced scope");
   assert.match(result.stdout, /signed_config absent or malformed/,
@@ -106,7 +108,8 @@ test("P0: a forged unparseable ALLOW (no kernel replay, no signed config) is NOT
 test("the untampered PARSEABLE fixture still verifies (blue control)", () => {
   const result = runVerify(loadFixture("receipt-allow.json"));
   assert.equal(result.status, 0, `receipt-allow.json: ${result.stdout}${result.stderr}`);
-  assert.match(result.stdout, /PASS {2}VERIFIED/);
+  assert.match(result.stdout,
+    /PASS {2}VERIFIED \(bundled self-check; not independent verification\)/);
 });
 
 test("a LEGITIMATE unparseable receipt is honest REDUCED SCOPE, not a false failure", () => {
@@ -120,5 +123,7 @@ test("a LEGITIMATE unparseable receipt is honest REDUCED SCOPE, not a false fail
   assert.match(result.stdout, /REDUCED SCOPE \(authorised-unparseable\)/, result.stdout);
   assert.doesNotMatch(result.stdout, /FAIL {2}NOT VERIFIED/,
     "a legitimate unparseable receipt must not be failed as if invalid");
-  assert.doesNotMatch(result.stdout, /PASS {2}VERIFIED/, "reduced scope is never VERIFIED");
+  assert.doesNotMatch(result.stdout,
+    /PASS {2}VERIFIED \(bundled self-check; not independent verification\)/,
+    "reduced scope is never VERIFIED");
 });

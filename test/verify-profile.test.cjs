@@ -71,14 +71,16 @@ test("P-REF behaviour: a config-less mediated receipt VERIFIES (the profile-dist
   // signed-config-known-gap): P-REF accepts it; every P-ENFORCE copy fails it.
   const r = await runVerify(path.join(KIT_ROOT, "fixtures", "receipt-allow.json"));
   assert.equal(r.ok, true, "P-REF must verify its own producer's config-less receipt");
-  assert.match(r.output, /PASS {2}VERIFIED/);
+  assert.match(r.output,
+    /PASS {2}VERIFIED \(bundled self-check; not independent verification\)/);
 });
 
 test("P-REF behaviour: the §11.1 fixture is REDUCED — distinct label, never the success banner", async () => {
   const r = await runVerify(path.join(KIT_ROOT, "fixtures", "receipt-unparseable.json"));
   assert.equal(r.ok, false, "reduced scope is not a pass (U4)");
   assert.match(r.output, /REDUCED SCOPE \(authorised-unparseable\)/);
-  assert.doesNotMatch(r.output, /PASS {2}VERIFIED/);
+  assert.doesNotMatch(r.output,
+    /PASS {2}VERIFIED \(bundled self-check; not independent verification\)/);
 });
 
 test("P-REF behaviour: binding tamper fails closed (U3)", async () => {
@@ -89,5 +91,6 @@ test("P-REF behaviour: binding tamper fails closed (U3)", async () => {
   });
   const r = await runVerify(file);
   assert.equal(r.ok, false, "tampered arguments must never verify");
-  assert.doesNotMatch(r.output, /PASS {2}VERIFIED/);
+  assert.doesNotMatch(r.output,
+    /PASS {2}VERIFIED \(bundled self-check; not independent verification\)/);
 });

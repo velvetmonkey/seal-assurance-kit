@@ -318,7 +318,10 @@ function reportOutcome(checks, receipt, receiptPath,
       : "REDUCED SCOPE (authorised-unparseable): kernel-attested request binding and " +
         "Ed25519-signed policy only, no independent replay — NOT independently verified";
     outcome = "reduced";
-  } else { summary = "PASS  VERIFIED"; outcome = "verified"; }
+  } else {
+    summary = "PASS  VERIFIED (bundled self-check; not independent verification)";
+    outcome = "verified";
+  }
   console.log(`  ${summary}`);
   return {
     ok: outcome === "verified",

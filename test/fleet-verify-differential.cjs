@@ -92,7 +92,10 @@ function classifyKit(file, pinned) {
   const r = spawnSync(process.execPath, args, { encoding: "utf8" });
   const out = `${r.stdout || ""}${r.stderr || ""}`;
   if (r.signal) return "CRASHED:" + r.signal;
-  if (r.status === 0 && /PASS {2}VERIFIED/.test(out)) return "VERIFIED";
+  if (r.status === 0 &&
+      /PASS {2}VERIFIED \(bundled self-check; not independent verification\)/.test(out)) {
+    return "VERIFIED";
+  }
   if (r.status === 4 && /REDUCED SCOPE/.test(out)) return "REDUCED";
   if (r.status !== 0 && /UNPINNED/.test(out)) return "UNPINNED";
   return "FAIL";

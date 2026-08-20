@@ -51,7 +51,7 @@ test("RED C1: rogue self-signed-config principal receipt is REDUCED SCOPE, never
   assert.equal(result.status, 4, result.output);
   assert.match(result.output, /REDUCED SCOPE \(principal config authority not established\)/);
   assert.match(result.output, /no pinned operator config-signing key supplied/);
-  assert.doesNotMatch(result.output, /PASS {2}VERIFIED/);
+  assert.doesNotMatch(result.output, /PASS {2}VERIFIED \(bundled self-check; not independent verification\)/);
 });
 
 test("RED C1: wrong operator pin also reduces a valid principal receipt instead of failing it", () => {
@@ -61,7 +61,7 @@ test("RED C1: wrong operator pin also reduces a valid principal receipt instead 
   assert.equal(result.status, 4, result.output);
   assert.match(result.output, /config signer .* does not match pinned operator key/);
   assert.doesNotMatch(result.output, /FAIL {2}NOT VERIFIED/);
-  assert.doesNotMatch(result.output, /PASS {2}VERIFIED/);
+  assert.doesNotMatch(result.output, /PASS {2}VERIFIED \(bundled self-check; not independent verification\)/);
 });
 
 test("RED C1: genuine principal receipt with the pinned operator key may PASS VERIFIED", () => {
@@ -70,7 +70,7 @@ test("RED C1: genuine principal receipt with the pinned operator key may PASS VE
   const result = runVerify(receipt, operator.pubkey);
   assert.equal(result.status, 0, result.output);
   assert.match(result.output, /PASS {2}principal config signer matches pinned operator authority/);
-  assert.match(result.output, /PASS {2}VERIFIED/);
+  assert.match(result.output, /PASS {2}VERIFIED \(bundled self-check; not independent verification\)/);
 });
 
 test("RED C1: parseable receipt with an invalid carried config signature hard-fails", () => {
@@ -83,7 +83,7 @@ test("RED C1: parseable receipt with an invalid carried config signature hard-fa
   assert.match(result.output, /FAIL {2}mediated policy Ed25519-signed and equals kernel_config/);
   assert.match(result.output, /signed_config Ed25519 signature invalid/);
   assert.match(result.output, /FAIL {2}NOT VERIFIED/);
-  assert.doesNotMatch(result.output, /PASS {2}VERIFIED/);
+  assert.doesNotMatch(result.output, /PASS {2}VERIFIED \(bundled self-check; not independent verification\)/);
 });
 
 test("P-REF control: valid signed_config without principal needs no operator pin", () => {
@@ -91,7 +91,7 @@ test("P-REF control: valid signed_config without principal needs no operator pin
   const result = runVerify(receipt);
   assert.equal(result.status, 0, result.output);
   assert.match(result.output, /PASS {2}mediated policy Ed25519-signed and equals kernel_config/);
-  assert.match(result.output, /PASS {2}VERIFIED/);
+  assert.match(result.output, /PASS {2}VERIFIED \(bundled self-check; not independent verification\)/);
 });
 
 test("RED C1: VERIFIED, REDUCED SCOPE, and FAIL use distinct exits 0, 4, and 1", () => {
