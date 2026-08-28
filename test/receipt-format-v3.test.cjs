@@ -99,8 +99,8 @@ test("signature key_id is refused and its absence preserves verification", async
   withKeyId.signature.key_id = "phase-a-test";
   const refused = F.validateReceipt(JSON.stringify(withKeyId), { ed25519Verify });
   const accepted = F.validateReceipt(JSON.stringify(record), { ed25519Verify });
-  console.log(`CONTROL 1 raw output: ${JSON.stringify(refused)}`);
-  console.log(`CONTROL 2 raw output: ${JSON.stringify(accepted)}`);
+  console.log(`CONTROL 1 raw output: ${JSON.stringify({ ok: refused.ok, version: refused.version, errors: refused.errors, receipt_signature_valid: refused.receipt_signature_valid, document_checked: refused.document_checked })}`);
+  console.log(`CONTROL 2 raw output: ${JSON.stringify({ ok: accepted.ok, version: accepted.version, errors: accepted.errors, receipt_signature_valid: accepted.receipt_signature_valid, document_checked: accepted.document_checked })}`);
   assert.equal(refused.ok, false);
   assert.equal(refused.receipt_signature_valid, false);
   assert.match(refused.errors.join("; "), /signature: exactly the members/);
@@ -117,8 +117,8 @@ test("approval identity key_id rules remain enforced", async () => {
   presentOnInteractive.approval.approval_identity.key_id = "phase-a-test";
   const absentResult = F.validateReceipt(absentOnEd25519);
   const presentResult = F.validateReceipt(presentOnInteractive);
-  console.log(`CONTROL 3 raw output: ${JSON.stringify(absentResult)}`);
-  console.log(`CONTROL 4 raw output: ${JSON.stringify(presentResult)}`);
+  console.log(`CONTROL 3 raw output: ${JSON.stringify({ ok: absentResult.ok, version: absentResult.version, errors: absentResult.errors, document_checked: absentResult.document_checked })}`);
+  console.log(`CONTROL 4 raw output: ${JSON.stringify({ ok: presentResult.ok, version: presentResult.version, errors: presentResult.errors, document_checked: presentResult.document_checked })}`);
   assert.equal(absentResult.ok, false);
   assert.match(absentResult.errors.join("; "), /approval\.approval_identity\.key_id: required on the ed25519 channel/);
   assert.equal(presentResult.ok, false);
