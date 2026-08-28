@@ -844,8 +844,11 @@ export function verifyReceiptSignature(record, ed25519Verify) {
     return { receipt_signature_valid: false,
       errors: ["signature: Object B envelope required on every v3 receipt (absent means invalid, not optional)"] };
   }
-  if (JSON.stringify(Object.keys(s).sort()) !== JSON.stringify(SIGNATURE_KEYS_SORTED))
-    errors.push("signature: exactly the members domain,algorithm,public_key,encoding,value required");
+  if (JSON.stringify(Object.keys(s).sort()) !== JSON.stringify(SIGNATURE_KEYS_SORTED)) {
+    const unexpectedKeys = Object.keys(s).filter((key) => !SIGNATURE_KEYS_SORTED.includes(key)).sort();
+    errors.push("signature: exactly the members domain,algorithm,public_key,encoding,value required" +
+      (unexpectedKeys.length === 0 ? "" : `; unexpected members: ${unexpectedKeys.join(",")}`));
+  }
   if (!RECEIPT_SIGNATURE_DOMAINS.includes(s.domain))
     errors.push(`signature.domain: must be one of ${RECEIPT_SIGNATURE_DOMAINS.join("|")}`);
   if (s.algorithm !== "Ed25519") errors.push("signature.algorithm: must be Ed25519");

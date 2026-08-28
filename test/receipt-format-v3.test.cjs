@@ -103,7 +103,7 @@ test("signature key_id is refused and its absence preserves verification", async
   console.log(`CONTROL 2 raw output: ${JSON.stringify({ ok: accepted.ok, version: accepted.version, errors: accepted.errors, receipt_signature_valid: accepted.receipt_signature_valid, document_checked: accepted.document_checked })}`);
   assert.equal(refused.ok, false);
   assert.equal(refused.receipt_signature_valid, false);
-  assert.match(refused.errors.join("; "), /signature: exactly the members/);
+  assert.match(refused.errors.join("; "), /signature: exactly the members.*key_id/);
   assert.equal(accepted.ok, true);
   assert.equal(accepted.receipt_signature_valid, true);
 });
