@@ -47,6 +47,26 @@ test("a seal-host 04f7ba83 Object B v2 receipt with signature.key_id is refused"
   console.log("V2_FIXTURE_REFUSED signature.key_id host=04f7ba83");
 });
 
+// The refusal tests prove that the exact-shape rule fires. These acceptance
+// tests prove that the kit can still read real host bytes after key_id removal.
+test("a real seal-host v1 receipt verifies once the retired signature.key_id is removed", async () => {
+  const F = await format();
+  const record = JSON.parse(fixture("object-b-v1-host.json"));
+  delete record.signature.key_id;
+  const result = F.validateReceipt(JSON.stringify(record), { ed25519Verify });
+  assert.equal(result.ok, true, result.errors.join("; "));
+  assert.equal(result.receipt_signature_valid, true);
+});
+
+test("a real seal-host v2 receipt verifies once the retired signature.key_id is removed", async () => {
+  const F = await format();
+  const record = JSON.parse(fixture("object-b-v2-host-04f7ba83.json"));
+  delete record.signature.key_id;
+  const result = F.validateReceipt(JSON.stringify(record), { ed25519Verify });
+  assert.equal(result.ok, true, result.errors.join("; "));
+  assert.equal(result.receipt_signature_valid, true);
+});
+
 test("real v1 and v2 signatures fail when presented under the other domain", async () => {
   const F = await format();
   for (const [name, claimedDomain, expectedCheck] of [
