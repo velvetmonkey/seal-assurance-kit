@@ -40,7 +40,6 @@ async function signedV3Block(domain) {
     domain,
     algorithm: "Ed25519",
     public_key: publicKeyRaw.toString("hex"),
-    key_id: F.sha256Hex(publicKeyRaw),
     encoding: "base64url-nopad",
     value: signature.toString("base64url"),
   };
@@ -92,6 +91,38 @@ test("v3 fails closed without an Ed25519 primitive", async () => {
   assert.equal(result.version, "v3");
   assert.equal(result.receipt_signature_valid, false);
   assert.match(result.errors.join("; "), /UNVERIFIED/);
+});
+
+test("signature key_id is refused and its absence preserves verification", async () => {
+  const { F, record } = await signedV3Block();
+  const withKeyId = structuredClone(record);
+  withKeyId.signature.key_id = "phase-a-test";
+  const refused = F.validateReceipt(JSON.stringify(withKeyId), { ed25519Verify });
+  const accepted = F.validateReceipt(JSON.stringify(record), { ed25519Verify });
+  console.log(`CONTROL 1 raw output: ${JSON.stringify({ ok: refused.ok, version: refused.version, errors: refused.errors, receipt_signature_valid: refused.receipt_signature_valid, document_checked: refused.document_checked })}`);
+  console.log(`CONTROL 2 raw output: ${JSON.stringify({ ok: accepted.ok, version: accepted.version, errors: accepted.errors, receipt_signature_valid: accepted.receipt_signature_valid, document_checked: accepted.document_checked })}`);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.receipt_signature_valid, false);
+  assert.match(refused.errors.join("; "), /signature: exactly the members.*key_id/);
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.receipt_signature_valid, true);
+});
+
+test("approval identity key_id rules remain enforced", async () => {
+  const F = await import("file://" + path.resolve(__dirname, "../kernel/receipt-format.js"));
+  const allow = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../fixtures/receipt-allow.json"), "utf8"));
+  const absentOnEd25519 = structuredClone(allow);
+  absentOnEd25519.approval.approval_identity.channel = "ed25519";
+  const presentOnInteractive = structuredClone(allow);
+  presentOnInteractive.approval.approval_identity.key_id = "phase-a-test";
+  const absentResult = F.validateReceipt(absentOnEd25519);
+  const presentResult = F.validateReceipt(presentOnInteractive);
+  console.log(`CONTROL 3 raw output: ${JSON.stringify({ ok: absentResult.ok, version: absentResult.version, errors: absentResult.errors, document_checked: absentResult.document_checked })}`);
+  console.log(`CONTROL 4 raw output: ${JSON.stringify({ ok: presentResult.ok, version: presentResult.version, errors: presentResult.errors, document_checked: presentResult.document_checked })}`);
+  assert.equal(absentResult.ok, false);
+  assert.match(absentResult.errors.join("; "), /approval\.approval_identity\.key_id: required on the ed25519 channel/);
+  assert.equal(presentResult.ok, false);
+  assert.match(presentResult.errors.join("; "), /approval\.approval_identity\.key_id: only the ed25519 channel carries a key_id/);
 });
 
 test("unknown versions and conflicting discriminator families remain refused", async () => {

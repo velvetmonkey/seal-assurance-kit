@@ -697,7 +697,7 @@ function validateV2Extras(r, errors) {
 // (config authority) and approval signatures are DIFFERENT objects under
 // different keys — none of them is this envelope.
 
-const SIGNATURE_KEYS_SORTED = ["algorithm", "domain", "encoding", "key_id", "public_key", "value"];
+const SIGNATURE_KEYS_SORTED = ["algorithm", "domain", "encoding", "public_key", "value"];
 const B64_STD = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const B64_URL = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
@@ -844,24 +844,23 @@ export function verifyReceiptSignature(record, ed25519Verify) {
     return { receipt_signature_valid: false,
       errors: ["signature: Object B envelope required on every v3 receipt (absent means invalid, not optional)"] };
   }
-  if (JSON.stringify(Object.keys(s).sort()) !== JSON.stringify(SIGNATURE_KEYS_SORTED))
-    errors.push("signature: exactly the members domain,algorithm,public_key,key_id,encoding,value required");
+  if (JSON.stringify(Object.keys(s).sort()) !== JSON.stringify(SIGNATURE_KEYS_SORTED)) {
+    const unexpectedKeys = Object.keys(s).filter((key) => !SIGNATURE_KEYS_SORTED.includes(key)).sort();
+    errors.push("signature: exactly the members domain,algorithm,public_key,encoding,value required" +
+      (unexpectedKeys.length === 0 ? "" : `; unexpected members: ${unexpectedKeys.join(",")}`));
+  }
   if (!RECEIPT_SIGNATURE_DOMAINS.includes(s.domain))
     errors.push(`signature.domain: must be one of ${RECEIPT_SIGNATURE_DOMAINS.join("|")}`);
   if (s.algorithm !== "Ed25519") errors.push("signature.algorithm: must be Ed25519");
   if (s.encoding !== "base64url-nopad") errors.push("signature.encoding: must be base64url-nopad");
   if (typeof s.public_key !== "string" || !HEX64.test(s.public_key))
     errors.push("signature.public_key: 64-hex Ed25519 public key required");
-  if (typeof s.key_id !== "string" || !HEX64.test(s.key_id))
-    errors.push("signature.key_id: 64-hex string required");
   const sigBytes = base64Bytes(s.value, B64_URL);
   if (sigBytes === null || sigBytes.length !== 64)
     errors.push("signature.value: base64url-nopad of a 64-byte Ed25519 signature required");
   if (errors.length === 0) {
     const pub = hexToBytes(s.public_key);
-    if (s.key_id !== sha256Hex(pub)) {
-      errors.push("signature.key_id: does not equal sha256 of the public key bytes");
-    } else if (typeof ed25519Verify !== "function") {
+    if (typeof ed25519Verify !== "function") {
       errors.push("signature: UNVERIFIED — v3 validation requires an Ed25519 primitive; pass opts.ed25519Verify(message, signature, publicKey) (fail closed, never skipped)");
     } else {
       let preimage;

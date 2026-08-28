@@ -24,23 +24,47 @@ async function format() {
 }
 
 // Existing v1 evidence, copied byte-for-byte from seal-check's tracked
-// test/fixtures/host-v3-block.receipt.json at d1969e3a.
-test("an existing host Object B v1 receipt remains verifiable", async () => {
+// test/fixtures/host-v3-block.receipt.json at d1969e3a. It uses the retired
+// signature.key_id member, so the current exact-shape rule must refuse it.
+test("an existing host Object B v1 receipt with signature.key_id is refused", async () => {
   const F = await format();
   const result = F.validateReceipt(fixture("object-b-v1-host.json"), { ed25519Verify });
-  assert.equal(result.ok, true, result.errors.join("; "));
-  assert.equal(result.receipt_signature_valid, true);
-  console.log("V1_FIXTURE_VERIFIED domain=seal.object-b/v1");
+  assert.equal(result.ok, false);
+  assert.equal(result.receipt_signature_valid, false);
+  assert.match(result.errors.join("; "), /signature: exactly the members/);
+  console.log("V1_FIXTURE_REFUSED signature.key_id");
 });
 
 // Issued by seal-host at 04f7ba83 through `./demo/run c1`; this is not a
-// locally invented signature or a v1 fixture with its label edited.
-test("a seal-host 04f7ba83 Object B v2 receipt verifies", async () => {
+// locally invented signature or a v1 fixture with its label edited. It uses
+// the retired signature.key_id member, so the current exact-shape rule refuses it.
+test("a seal-host 04f7ba83 Object B v2 receipt with signature.key_id is refused", async () => {
   const F = await format();
   const result = F.validateReceipt(fixture("object-b-v2-host-04f7ba83.json"), { ed25519Verify });
+  assert.equal(result.ok, false);
+  assert.equal(result.receipt_signature_valid, false);
+  assert.match(result.errors.join("; "), /signature: exactly the members/);
+  console.log("V2_FIXTURE_REFUSED signature.key_id host=04f7ba83");
+});
+
+// The refusal tests prove that the exact-shape rule fires. These acceptance
+// tests prove that the kit can still read real host bytes after key_id removal.
+test("a real seal-host v1 receipt verifies once the retired signature.key_id is removed", async () => {
+  const F = await format();
+  const record = JSON.parse(fixture("object-b-v1-host.json"));
+  delete record.signature.key_id;
+  const result = F.validateReceipt(JSON.stringify(record), { ed25519Verify });
   assert.equal(result.ok, true, result.errors.join("; "));
   assert.equal(result.receipt_signature_valid, true);
-  console.log("V2_FIXTURE_VERIFIED domain=seal.object-b/v2 host=04f7ba83");
+});
+
+test("a real seal-host v2 receipt verifies once the retired signature.key_id is removed", async () => {
+  const F = await format();
+  const record = JSON.parse(fixture("object-b-v2-host-04f7ba83.json"));
+  delete record.signature.key_id;
+  const result = F.validateReceipt(JSON.stringify(record), { ed25519Verify });
+  assert.equal(result.ok, true, result.errors.join("; "));
+  assert.equal(result.receipt_signature_valid, true);
 });
 
 test("real v1 and v2 signatures fail when presented under the other domain", async () => {
@@ -52,6 +76,7 @@ test("real v1 and v2 signatures fail when presented under the other domain", asy
       /signature\.value: cannot construct seal\.object-b\/v2 preimage/],
   ]) {
     const record = JSON.parse(fixture(name));
+    delete record.signature.key_id;
     const signedDomain = record.signature.domain;
     record.signature.domain = claimedDomain;
     const result = F.validateReceipt(JSON.stringify(record), { ed25519Verify });
