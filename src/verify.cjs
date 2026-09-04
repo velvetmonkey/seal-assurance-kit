@@ -98,7 +98,110 @@ function principalAuthority(receipt, expectedConfigPubkey) {
   return { trusted: true, detail: `pinned operator key ${expectedConfigPubkey.slice(0, 12)}` };
 }
 
-async function verifyDetailed(receiptPath, { expectedConfigPubkey } = {}) {
+// The shipped Seal product has a deliberately smaller v2 envelope than this
+// kit's host/Object-B dialect.  Keep this parser here, rather than importing
+// the producer: independent verification is the point of this boundary.
+const SPINE_V2_ORDER = [
+  "seal_receipt", "tool", "action", "arguments", "now", "kernel_config",
+  "granted_capabilities", "kernel_inputs", "verdict", "reason", "replay", "signature",
+];
+const HEX64 = /^[0-9a-f]{64}$/;
+
+function isObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function spineJsonIsCanonical(value) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isSafeInteger(value);
+  if (Array.isArray(value)) return value.every(spineJsonIsCanonical);
+  return isObject(value) && Object.values(value).every(spineJsonIsCanonical);
+}
+
+function spineV2Errors(receipt) {
+  const errors = [];
+  if (!isObject(receipt)) return ["spine-v2 receipt: object required"];
+  if (JSON.stringify(Object.keys(receipt)) !== JSON.stringify(SPINE_V2_ORDER))
+    errors.push("spine-v2 receipt: exact producer member order and set required");
+  if (receipt.seal_receipt !== "v2") errors.push("seal_receipt: v2 required");
+  if (typeof receipt.tool !== "string" || !receipt.tool || !isObject(receipt.arguments))
+    errors.push("tool and arguments are required");
+  if (!Number.isSafeInteger(receipt.now) || receipt.now < 0) errors.push("now: non-negative safe integer required");
+  if (!isObject(receipt.kernel_config)) errors.push("kernel_config: object required");
+  if (!Array.isArray(receipt.granted_capabilities) || !isObject(receipt.kernel_inputs))
+    errors.push("granted_capabilities and kernel_inputs are required");
+  if (!Array.isArray(receipt.kernel_inputs?.approvals) ||
+      !receipt.kernel_inputs.approvals.every((value) => typeof value === "string"))
+    errors.push("kernel_inputs.approvals: string array required");
+  for (const key of ["votes", "grants", "forecasts"]) {
+    if (typeof receipt.kernel_inputs?.[key] !== "string") errors.push(`kernel_inputs.${key}: string required`);
+  }
+  const targets = Array.isArray(receipt.granted_capabilities)
+    ? receipt.granted_capabilities.map((grant) => grant?.target) : [];
+  if (!Array.isArray(receipt.granted_capabilities) ||
+      !receipt.granted_capabilities.every((grant) => isObject(grant) && typeof grant.target === "string") ||
+      JSON.stringify(targets) !== JSON.stringify(receipt.kernel_inputs?.approvals))
+    errors.push("granted_capabilities: must exactly match kernel_inputs.approvals");
+  if (!FALLBACK_VERDICTS.includes(receipt.verdict) || typeof receipt.reason !== "string")
+    errors.push("verdict and reason are required");
+  if (!isObject(receipt.replay) || !HEX64.test(receipt.replay.args_sha256) || !HEX64.test(receipt.replay.config_sha256))
+    errors.push("replay: args_sha256 and config_sha256 must be 64 lowercase hex");
+  if (!isObject(receipt.signature) || JSON.stringify(Object.keys(receipt.signature).sort()) !== JSON.stringify(["algorithm", "value"]))
+    errors.push("signature: exactly the members algorithm,value required");
+  else if (receipt.signature.algorithm !== "ed25519" || !/^[0-9a-f]{128}$/.test(receipt.signature.value))
+    errors.push("signature: ed25519 with a 128-lowercase-hex value required");
+  if (!spineJsonIsCanonical(receipt)) errors.push("receipt: only finite safe-integer JSON values are canonical");
+  if (errors.length === 0) {
+    // JSON.stringify is the independently chosen ECMAScript own-property-order
+    // serialization.  The validation above admits only values for which that
+    // serialization is unambiguous.
+    const argsHash = crypto.createHash("sha256").update(JSON.stringify(receipt.arguments), "utf8").digest("hex");
+    const configHash = crypto.createHash("sha256").update(JSON.stringify(receipt.kernel_config), "utf8").digest("hex");
+    if (receipt.replay.args_sha256 !== argsHash) errors.push("replay.args_sha256: commitment mismatch");
+    if (receipt.replay.config_sha256 !== configHash) errors.push("replay.config_sha256: commitment mismatch");
+  }
+  return errors;
+}
+
+const FALLBACK_VERDICTS = ["ALLOW", "BLOCK", "ERROR"];
+
+function isSpineV2(receipt) {
+  return isObject(receipt) && receipt.seal_receipt === "v2" && isObject(receipt.kernel_inputs) &&
+    Object.prototype.hasOwnProperty.call(receipt, "replay") && isObject(receipt.signature) &&
+    receipt.signature.algorithm === "ed25519";
+}
+
+async function verifySpineV2(receipt, receiptPath, receiptPubkey) {
+  const checks = [];
+  const add = (name, pass, detail = "") => checks.push({ name, pass, detail });
+  const errors = spineV2Errors(receipt);
+  add("schema valid (spine-v2)", errors.length === 0, errors.join("; "));
+  if (errors.length) return reportOutcome(checks, receipt, receiptPath);
+  if (!/^[0-9a-f]{64}$/.test(receiptPubkey || "")) {
+    add("receipt Ed25519 signature", false, "spine-v2 carries no public key; pass --receipt-pubkey <64-lowercase-hex>");
+    return reportOutcome(checks, receipt, receiptPath);
+  }
+  const unsigned = { ...receipt };
+  delete unsigned.signature;
+  add("receipt Ed25519 signature", receiptSignatureValid(JSON.stringify(unsigned),
+    Buffer.from(receipt.signature.value, "hex"), Buffer.from(receiptPubkey, "hex")),
+    `key ${receiptPubkey.slice(0, 12)}`);
+  if (!checks.at(-1).pass) return reportOutcome(checks, receipt, receiptPath);
+  let replayed;
+  try {
+    replayed = await decide(receipt.kernel_config, {
+      tool: receipt.tool, args: receipt.arguments, approvals: receipt.kernel_inputs.approvals, now: receipt.now,
+    });
+  } catch (error) {
+    add("kernel verdict re-derives", false, error.message);
+    return reportOutcome(checks, receipt, receiptPath);
+  }
+  add("kernel verdict re-derives", replayed.verdict === receipt.verdict,
+    `re-derived ${replayed.verdict} / claimed ${receipt.verdict}`);
+  return reportOutcome(checks, receipt, receiptPath);
+}
+
+async function verifyDetailed(receiptPath, { expectedConfigPubkey, receiptPubkey } = {}) {
   let receiptDocument;
   let receipt;
   try {
@@ -108,6 +211,7 @@ async function verifyDetailed(receiptPath, { expectedConfigPubkey } = {}) {
     console.error(`FAIL  cannot read receipt: ${e.message}`);
     return { ok: false, outcome: "fail", exitCode: EXIT_CODES.FAIL };
   }
+  if (isSpineV2(receipt)) return verifySpineV2(receipt, receiptPath, receiptPubkey);
   const F = await import("file://" + path.resolve(__dirname, "../kernel/receipt-format.js"));
   const checks = [];
   const add = (name, pass, detail = "") => checks.push({ name, pass, detail });
