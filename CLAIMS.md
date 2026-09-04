@@ -17,6 +17,11 @@ Honest boundaries. What this kit does and does not assert.
 If all pass, the receipt is a faithful, reproducible record of what the kernel decided
 for that call under that policy.
 
+For shipped Seal spine-v2 receipts, `seal verify --receipt-pubkey <64-hex>`
+instead checks the producer's `replay` commitments, the Ed25519 signature over
+the independently serialized unsigned body, and a fresh kernel replay. The
+receipt does not carry a public key, so the key is necessarily caller-supplied.
+
 ## `seal verify` does NOT claim
 
 - That the **policy is correct** for your risk. it verifies the decision matches the

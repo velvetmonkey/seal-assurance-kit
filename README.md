@@ -39,7 +39,7 @@ Prints `PASS VERIFIED` for a good receipt and `FAIL` (exit 1) for an uncovered s
 
 You hand the kit an artifact and it gives you a one-line verdict plus the gap:
 
-- **A receipt** → `seal verify` re-derives it from its own bytes (schema, kernel-binary match, canonical request hash, verdict). PASS or the exact failing check.
+- **A receipt** → `seal verify` re-derives it from its own bytes. Kit/host receipts check their schema, kernel-binary match, canonical request hash, and verdict; shipped Seal spine-v2 receipts check their signed body commitments, Ed25519 signature against an out-of-band receipt key, and verdict replay. PASS or the exact failing check.
 - **A tool catalogue + policy** → `seal scan` names every mutating tool no approval covers and exits 1, so unguarded surface fails CI instead of shipping.
 - **Two receipts** → `seal receipt-diff` classifies every field change as AUTHORIZATION-SURFACE (loud, exit 1) or MINOR.
 - **A label set** → `seal adequacy` checks the evidence actually separates the labels rather than looking like it does.
@@ -92,6 +92,14 @@ provisioned independently; never copy the pin from the receipt:
 # SEAL_CONFIG_PUBKEY: your operator config-signing public key, 64 lowercase hex.
 node bin/seal verify <your-receipt>.json \
   --expected-config-pubkey "$SEAL_CONFIG_PUBKEY"
+```
+
+For a receipt produced by the shipped `seal demo`, supply the demo's separately
+recorded receipt signer key; the spine-v2 signature deliberately contains only
+`algorithm` and `value`:
+
+```bash
+node bin/seal verify <demo-receipt>.json --receipt-pubkey "$(cat <demo-dir>/receipt-signer.pub)"
 ```
 
 Without a matching pin, otherwise valid principal evidence is `REDUCED SCOPE`
