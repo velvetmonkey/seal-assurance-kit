@@ -16,7 +16,7 @@ const KNOWN_PROFILES = ["L0"];
 const HELP = [
   "seal assurance kit",
   "",
-  "  seal verify <receipt.json> [--expected-config-pubkey <64-hex>]",
+  "  seal verify <receipt.json> [--expected-config-pubkey <64-hex>] [--receipt-pubkey <64-hex>]",
   "                                verify a decision receipt; principal-bearing",
   "                                receipts require this out-of-band operator pin",
   "  seal init <manifest.tools.json> [--out <policy.json>]",
@@ -82,7 +82,7 @@ async function main() {
   }
   if (cmd === "verify") {
     const args = process.argv.slice(3);
-    let f, expectedConfigPubkey;
+    let f, expectedConfigPubkey, receiptPubkey;
     for (let index = 0; index < args.length; index++) {
       const arg = args[index];
       if (arg === "--expected-config-pubkey") {
@@ -91,15 +91,23 @@ async function main() {
         expectedConfigPubkey = args[++index];
         if (!expectedConfigPubkey)
           usageError("--expected-config-pubkey requires a 64-lowercase-hex Ed25519 public key");
+      } else if (arg === "--receipt-pubkey") {
+        if (receiptPubkey !== undefined)
+          usageError("--receipt-pubkey may be supplied only once");
+        receiptPubkey = args[++index];
+        if (!receiptPubkey)
+          usageError("--receipt-pubkey requires a 64-lowercase-hex Ed25519 public key");
       } else if (arg.startsWith("-") || f) {
-        usageError("usage: seal verify <receipt.json> [--expected-config-pubkey <64-hex>]");
+        usageError("usage: seal verify <receipt.json> [--expected-config-pubkey <64-hex>] [--receipt-pubkey <64-hex>]");
       } else f = arg;
     }
-    if (!f) usageError("usage: seal verify <receipt.json> [--expected-config-pubkey <64-hex>]");
+    if (!f) usageError("usage: seal verify <receipt.json> [--expected-config-pubkey <64-hex>] [--receipt-pubkey <64-hex>]");
     if (expectedConfigPubkey !== undefined && !/^[0-9a-f]{64}$/.test(expectedConfigPubkey))
       usageError("--expected-config-pubkey requires a 64-lowercase-hex Ed25519 public key");
+    if (receiptPubkey !== undefined && !/^[0-9a-f]{64}$/.test(receiptPubkey))
+      usageError("--receipt-pubkey requires a 64-lowercase-hex Ed25519 public key");
     const { verifyDetailed } = require(path.join(__dirname, "../src/verify.cjs"));
-    const result = await verifyDetailed(path.resolve(f), { expectedConfigPubkey });
+    const result = await verifyDetailed(path.resolve(f), { expectedConfigPubkey, receiptPubkey });
     process.exit(result.exitCode);
   }
   if (cmd === "init") {

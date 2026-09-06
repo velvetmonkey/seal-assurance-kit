@@ -4,11 +4,11 @@ Honest boundaries. What this kit does and does not assert.
 
 ## `seal verify` claims
 
-- The kernel binary supplied to the verifier is **byte-identical** to the hash named in
+- For mediated kit/host receipts, the kernel binary supplied to the verifier is **byte-identical** to the hash named in
   the receipt and to the supplied pinned hash (`sha256`); this verifier does not audit that pinned build.
-- Re-running that **same** kernel with the receipt's own policy and call reproduces the
-  claimed verdict and the verbatim emitted decision bytes.
-- The canonical request the receipt hashes matches its stated `canonical_request_sha256`.
+- For parseable mediated kit/host receipts, re-running that **same** kernel with the receipt's own policy and call reproduces the
+  claimed verdict and the emitted decision bytes modulo the kernel request commitment.
+- For parseable mediated kit/host receipts, the canonical request the receipt hashes matches its stated `canonical_request_sha256`.
 - For a receipt carrying `principal`, `PASS VERIFIED` additionally means the
   valid `signed_config` signer matches the operator config-signing key supplied
   independently with `--expected-config-pubkey`. A valid self-signature alone
@@ -16,6 +16,16 @@ Honest boundaries. What this kit does and does not assert.
 
 If all pass, the receipt is a faithful, reproducible record of what the kernel decided
 for that call under that policy.
+
+For shipped Seal spine-v2 receipts, `seal verify --receipt-pubkey <64-hex>`
+instead checks the producer's `replay` commitments, the Ed25519 signature over
+the independently serialized unsigned body, and a fresh kernel replay of both verdict and reason. It requires the live worker's
+policy and input shape, including empty votes/grants/forecasts, target-only grants,
+and a consistent action/verdict pair. It rejects duplicate members at any depth.
+The local kernel is checked against the supplied pin; spine-v2 carries neither a
+kernel hash, `canonical_request_sha256`, nor emitted decision bytes, so these
+three receipt comparisons apply only to the kit/host path. The
+receipt does not carry a public key, so the key is necessarily caller-supplied.
 
 ## `seal verify` does NOT claim
 

@@ -94,3 +94,139 @@ test("P-REF behaviour: binding tamper fails closed (U3)", async () => {
   assert.doesNotMatch(r.output,
     /PASS {2}VERIFIED \(bundled self-check; not independent verification\)/);
 });
+
+// Independent spine-v2 corpus: no producer imports or copied serializer.
+const crypto = require("node:crypto");
+const { decide } = require("../kernel/runner.cjs");
+const spineDir = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "kit-spine-"));
+const spineKeys = crypto.generateKeyPairSync("ed25519");
+const spinePubkey = spineKeys.publicKey.export({ type: "spki", format: "der" }).subarray(-32).toString("hex");
+const hash = (value) => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
+let spineBase;
+async function spineReceipt(approved) {
+  const cfg = await import("../kernel/seal-config.js");
+  const tool = "demo.mutate", args = { line: "spine regression" };
+  const config = { epoch: 1, safety: { approval: { control_file: "product-adapter", ttl_seconds: 120 },
+    tools: [{ name: tool, mode: "guarded", match: { type: "always" }, target: [{ full_arguments: true }] }] },
+    temporal: { policies: [] } };
+  const approvals = approved ? [cfg.guardTarget(tool, args)] : [];
+  const result = await decide(config, { tool, args, approvals, now: 1000 });
+  return { seal_receipt: "v2", tool, action: approved ? "ALLOW" : "BLOCK", arguments: args, now: 1000,
+    kernel_config: config, granted_capabilities: approvals.map(target => ({ target })),
+    kernel_inputs: { approvals, votes: "", grants: "", forecasts: "" },
+    verdict: result.verdict, reason: result.receipt.reason,
+    replay: { args_sha256: hash(args), config_sha256: hash(config) } };
+}
+function spineWrite(name, receipt, rawMutation = s => s) {
+  const unsigned = { ...receipt }; delete unsigned.signature;
+  const signed = { ...unsigned, signature: { algorithm: "ed25519",
+    value: crypto.sign(null, Buffer.from(JSON.stringify(unsigned)), spineKeys.privateKey).toString("hex") } };
+  const file = path.join(spineDir, name + ".json");
+  fs.writeFileSync(file, rawMutation(JSON.stringify(signed)));
+  return file;
+}
+async function spineVerify(file, key = spinePubkey) {
+  const lines = [], original = console.log;
+  console.log = (...args) => lines.push(args.join(" "));
+  try { return { ...await verifier.verifyDetailed(file, { receiptPubkey: key }), output: lines.join("\n") }; }
+  finally { console.log = original; }
+}
+
+test("spine-v2: honest decisions and optional approval identity verify", async () => {
+  spineBase = await spineReceipt(true);
+  for (const [name, receipt] of [["allow", spineBase], ["block", await spineReceipt(false)],
+    ["input-required", { ...await spineReceipt(false), action: "INPUT_REQUIRED" }],
+    ["bound-allow", { ...spineBase, kernel_inputs: { ...spineBase.kernel_inputs,
+      approval_handle_sha256: crypto.createHash("sha256").update("approval handle").digest("hex") } }]]) {
+    assert.equal((await spineVerify(spineWrite(name, receipt))).exitCode, 0, name);
+  }
+  fs.writeFileSync(path.join(spineDir, "pubkey"), spinePubkey);
+  if (process.env.SPINE_EVIDENCE_DIR) fs.writeFileSync(path.join(process.env.SPINE_EVIDENCE_DIR, "corpus-path"), spineDir);
+});
+
+const spineMutations = [
+  ["p1-extra-replay-member", r => { r.replay.nonce = "extra"; }],
+  ["p2-nonempty-grants", r => { r.kernel_inputs.grants = "tampered"; }],
+  ["p3-nonempty-forecasts", r => { r.kernel_inputs.forecasts = "tampered"; }],
+  ["p4-malformed-handle", r => { r.kernel_inputs.approval_handle_sha256 = "not-a-sha256"; }],
+  ["p5-action-allow-verdict-block", r => { r.action = "ALLOW"; }, true],
+  ["p6-extra-grant-field", r => { r.granted_capabilities[0].extra = true; }],
+  ["p7-extra-kernel-inputs-member", r => { r.kernel_inputs.foo = "bar"; }],
+  ["p8-numeric-action", r => { r.action = 1; }],
+  ["p9-fabricated-reason", r => { r.reason = "because I said so"; }],
+  ["p10-garbage-votes", r => { r.kernel_inputs.votes = "garbage-not-ndjson"; }],
+];
+for (const [name, mutate, blocked] of spineMutations) {
+  test(`spine-v2: refuses producer-impossible ${name} even with a valid signature`, async () => {
+    const receipt = blocked ? await spineReceipt(false) : structuredClone(spineBase);
+    mutate(receipt);
+    const result = await spineVerify(spineWrite(name, receipt));
+    assert.equal(result.exitCode, 1, result.output);
+    if (name === "p9-fabricated-reason") assert.match(result.output, /FAIL  kernel reason re-derives/);
+  });
+}
+
+test("spine-v2: duplicate members at top level and nested depth fail closed", async () => {
+  for (const [name, mutate] of [
+    ["p12-duplicate-member", s => s.replace('{"seal_receipt":', '{"seal_receipt":"v2","seal_receipt":')],
+    ["nested-duplicate", s => s.replace('"votes":""', '"votes":"hidden","votes":""')],
+    ["escaped-duplicate", s => s.replace('"votes":""', '"vo\\u0074es":"hidden","votes":""')],
+  ]) {
+    const result = await spineVerify(spineWrite(name, spineBase, mutate));
+    assert.equal(result.exitCode, 1);
+    assert.match(result.output, /duplicate member/);
+  }
+});
+
+test("spine-v2: nonhex target still fails verdict replay", async () => {
+  const receipt = structuredClone(spineBase);
+  receipt.granted_capabilities[0].target = "not-hex";
+  receipt.kernel_inputs.approvals = ["not-hex"];
+  const result = await spineVerify(spineWrite("p11-nonhex-target", receipt));
+  assert.equal(result.exitCode, 1);
+  assert.match(result.output, /FAIL  kernel verdict re-derives/);
+});
+
+test("spine-v2: ten signature and envelope tampers remain refused", async () => {
+  const file = spineWrite("tamper-base", spineBase);
+  const base = JSON.parse(fs.readFileSync(file, "utf8"));
+  const other = JSON.parse(fs.readFileSync(spineWrite("other-body", { ...spineBase, reason: "other" }), "utf8"));
+  const mutations = [
+    r => { r.signature.value = (r.signature.value[0] === "0" ? "1" : "0") + r.signature.value.slice(1); },
+    r => { r.reason += "x"; },
+    r => { delete r.signature; },
+    r => { r.signature.algorithm = "rsa"; },
+    r => { r.signature.value = r.signature.value.slice(2); },
+    r => { r.signature.value = other.signature.value; },
+    r => {},
+    r => { r.signature.key_id = "unexpected"; },
+    r => { r.extra = true; },
+    r => { r.signature = {}; },
+  ];
+  const wrongKey = crypto.generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "der" }).subarray(-32).toString("hex");
+  for (const [index, mutate] of mutations.entries()) {
+    const receipt = structuredClone(base); mutate(receipt);
+    const target = path.join(spineDir, `t${index + 1}.json`);
+    fs.writeFileSync(target, JSON.stringify(receipt));
+    const key = index === 6 ? wrongKey : spinePubkey;
+    fs.writeFileSync(path.join(spineDir, `t${index + 1}.pubkey`), key);
+    const result = await spineVerify(target, key);
+    assert.equal(result.exitCode, 1, `tamper ${index + 1}: ${result.output}`);
+    if (index === 1) assert.match(result.output, /FAIL  receipt Ed25519 signature/);
+  }
+});
+
+test("spine-v2: signed policies and approval cardinality must match the worker", async () => {
+  const receipt = structuredClone(spineBase);
+  receipt.kernel_config.safety.approval.ttl_seconds = 121;
+  receipt.replay.config_sha256 = hash(receipt.kernel_config);
+  const policyResult = await spineVerify(spineWrite("nonworker-policy", receipt));
+  assert.equal(policyResult.exitCode, 1);
+  assert.match(policyResult.output, /FAIL  worker policy shape/);
+  const repeated = structuredClone(spineBase);
+  repeated.kernel_inputs.approvals.push(repeated.kernel_inputs.approvals[0]);
+  repeated.granted_capabilities.push({ ...repeated.granted_capabilities[0] });
+  const grantResult = await spineVerify(spineWrite("multiple-approvals", repeated));
+  assert.equal(grantResult.exitCode, 1);
+  assert.match(grantResult.output, /FAIL  worker approval targets/);
+});

@@ -28,10 +28,16 @@ node bin/seal verify fixtures/receipt-block.json
 # PASS  VERIFIED          → exit 0
 ```
 
-What just happened: the kit checked the receipt's schema, confirmed the local kernel binary
+For this parseable mediated kit/host receipt, the kit checked the receipt's schema, confirmed the local kernel binary
 matches both the receipt's claimed kernel and the audited pin, re-derived the canonical request
 line and its SHA-256, resolved the policy grants to approval targets, re-ran the decision, and
-compared the emitted decision bytes byte-for-byte.
+compared the emitted decision bytes byte-for-byte modulo the kernel request commitment.
+
+For a shipped Seal spine-v2 receipt, supply `--receipt-pubkey <64-lowercase-hex>`.
+That path checks the worker schema, action/verdict consistency, the arguments and
+config SHA-256 commitments in `replay`, the unsigned body's Ed25519 signature,
+the local kernel against the supplied pin, and replays the verdict and reason.
+Spine-v2 carries no kernel hash, canonical request hash, or emitted bytes to compare.
 
 For a principal-bearing receipt, provision the operator config-signing key
 independently (never copy it from the receipt):
