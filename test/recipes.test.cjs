@@ -117,3 +117,32 @@ test("Calibration K is refused without --experimental and bytes stay unchanged",
   assert.equal(shape.participation.active.some((entry) => entry.symbol === "K"), true);
   assert.deepEqual(shape.participation.inactive, []);
 });
+
+test("init refuses existing outputs unless --force is explicit, including recipes", () => {
+  for (const recipeArgs of [[], ["--recipe", "prod-db"]]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-init-overwrite-"));
+    const output = path.join(dir, "policy.json");
+    const args = ["init", ...recipeArgs, path.join(MANIFEST_ROOT, MANIFESTS[0]), "--out", output];
+    fs.writeFileSync(output, "SENTINEL\n");
+    assert.match(run(args, 1), /refusing to overwrite.*--force/);
+    assert.equal(fs.readFileSync(output, "utf8"), "SENTINEL\n");
+    run([...args, "--force"]);
+    assert.equal(validateTrustedConfig(JSON.parse(fs.readFileSync(output))).ok, true);
+  }
+});
+
+test("init rejects duplicate names before writing and accepts distinct names", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-init-names-"));
+  const manifest = path.join(dir, "manifest.tools.json");
+  const output = path.join(dir, "policy.json");
+  const tools = [{ name: "same" }, { name: "same" }];
+  fs.writeFileSync(manifest, JSON.stringify({ server: "names", tools }));
+  for (const recipeArgs of [[], ["--recipe", "prod-db"]]) {
+    assert.match(run(["init", ...recipeArgs, manifest, "--out", output], 1), /duplicate tool name: same/);
+    assert.equal(fs.existsSync(output), false);
+  }
+  tools[1].name = "different";
+  fs.writeFileSync(manifest, JSON.stringify({ server: "names", tools }));
+  run(["init", manifest, "--out", output]);
+  assert.deepEqual(JSON.parse(fs.readFileSync(output)).safety.tools.map((tool) => tool.name), ["same", "different"]);
+});

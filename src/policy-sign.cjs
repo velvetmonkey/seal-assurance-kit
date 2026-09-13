@@ -55,7 +55,7 @@ function preparePolicy(policyPath) {
   };
 }
 
-function signPreparedPolicy(prepared, { keyPath, outputPath }) {
+function signPreparedPolicy(prepared, { keyPath, outputPath, force = false }) {
   const seed = fs.readFileSync(keyPath, "utf8").trim();
   const privateKey = signingKey(seed);
   const publicKey = rawPublicKey(privateKey);
@@ -64,7 +64,12 @@ function signPreparedPolicy(prepared, { keyPath, outputPath }) {
   const envelope = JSON.stringify({ payload, signature }) + "\n";
   const out = outputPath || `${prepared.policyPath}.signed.json`;
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
-  fs.writeFileSync(out, envelope, { mode: 0o600 });
+  try {
+    fs.writeFileSync(out, envelope, { mode: 0o600, flag: force ? "w" : "wx" });
+  } catch (error) {
+    if (error.code === "EEXIST") throw new Error(`refusing to overwrite ${out}; use --force to replace it`);
+    throw error;
+  }
   return {
     output: out,
     publicKey: publicKey.toString("hex"),
