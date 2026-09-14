@@ -19,9 +19,10 @@ const HELP = [
   "  seal verify <receipt.json> [--expected-config-pubkey <64-hex>] [--receipt-pubkey <64-hex>]",
   "                                verify a decision receipt; principal-bearing",
   "                                receipts require this out-of-band operator pin",
-  "  seal init <manifest.tools.json> [--out <policy.json>]",
-  "  seal init --recipe <prod-db|deploy|token-governor|mesh> <manifest.tools.json> [--out <policy.json>]",
+  "  seal init <manifest.tools.json> [--out <policy.json>] [--force]",
+  "  seal init --recipe <prod-db|deploy|token-governor|mesh> <manifest.tools.json> [--out <policy.json>] [--force]",
   "                                scaffold an exact-name reviewable policy",
+  "                                --force permits replacing an existing output",
   "  seal add-kernel <S|T|C|V|L|B> <manifest.tools.json> [--policy <policy.json>]",
   "                                add one non-vacuous kernel to an existing policy",
   "  seal add-kernel K <manifest.tools.json> [--policy <policy.json>] --experimental",
@@ -40,8 +41,9 @@ const HELP = [
   "                                 and does not judge field-set sufficiency)",
   "                                exit: 0 no auth drift · 1 drift · 2 malformed/",
   "                                legacy/tampered",
-  "  seal policy sign <policy.json> --key <seed-file> [--out <trusted.json>] [--yes]",
+  "  seal policy sign <policy.json> --key <seed-file> [--out <trusted.json>] [--yes] [--force]",
   "                                validate and Ed25519-sign a policy envelope",
+  "                                --force permits replacing an existing output",
   "                                (accepts the full 7-kernel bundle: safety +",
   "                                 temporal/consensus/convergence/calibration/",
   "                                 linear/budget sections, per-section `enabled`;",
@@ -113,23 +115,25 @@ async function main() {
   if (cmd === "init") {
     const args = process.argv.slice(3);
     let manifest, out, recipe;
+    let force = false;
     for (let index = 0; index < args.length; index++) {
       const arg = args[index];
       if (arg === "--out" || arg === "--recipe") {
         const value = args[++index];
-        if (!value) usageError("usage: seal init [--recipe <name>] <manifest.tools.json> [--out <policy.json>]");
+        if (!value) usageError("usage: seal init [--recipe <name>] <manifest.tools.json> [--out <policy.json>] [--force]");
         if (arg === "--out") out = value;
         else recipe = value;
-      } else if (arg.startsWith("--") || manifest) {
-        usageError("usage: seal init [--recipe <name>] <manifest.tools.json> [--out <policy.json>]");
+      } else if (arg === "--force") force = true;
+      else if (arg.startsWith("--") || manifest) {
+        usageError("usage: seal init [--recipe <name>] <manifest.tools.json> [--out <policy.json>] [--force]");
       } else manifest = arg;
     }
-    if (!manifest) usageError("usage: seal init [--recipe <name>] <manifest.tools.json> [--out <policy.json>]");
+    if (!manifest) usageError("usage: seal init [--recipe <name>] <manifest.tools.json> [--out <policy.json>] [--force]");
     const { initPolicy } = require(path.join(__dirname, "../src/init.cjs"));
     try {
       const result = initPolicy(path.resolve(manifest), {
         outputPath: out ? path.resolve(out) : undefined,
-        recipe,
+        recipe, force,
       });
       console.log(`created policy  ${result.output}`);
       if (recipe) {
@@ -185,7 +189,7 @@ async function main() {
   }
   if (cmd === "policy") {
     if (process.argv[3] !== "sign" || !process.argv[4])
-      usageError("usage: seal policy sign <policy.json> --key <seed-file> [--out <trusted.json>] [--yes]");
+      usageError("usage: seal policy sign <policy.json> --key <seed-file> [--out <trusted.json>] [--yes] [--force]");
     const policy = process.argv[4];
     const args = process.argv.slice(5);
     const valueAfter = (flag) => {
@@ -195,10 +199,11 @@ async function main() {
     const key = valueAfter("--key");
     const out = valueAfter("--out");
     const yes = args.includes("--yes");
-    const known = new Set(["--key", "--out", "--yes", key, out].filter(Boolean));
+    const force = args.includes("--force");
+    const known = new Set(["--key", "--out", "--yes", "--force", key, out].filter(Boolean));
     const unknown = args.find((arg) => !known.has(arg));
     if (!key || unknown)
-      usageError("usage: seal policy sign <policy.json> --key <seed-file> [--out <trusted.json>] [--yes]");
+      usageError("usage: seal policy sign <policy.json> --key <seed-file> [--out <trusted.json>] [--yes] [--force]");
     const { preparePolicy, signPreparedPolicy } = require(path.join(__dirname, "../src/policy-sign.cjs"));
     const { formatParticipation } = require(path.join(__dirname, "../src/trusted-config.cjs"));
     try {
@@ -216,7 +221,7 @@ async function main() {
         console.error("ACKNOWLEDGED  --yes supplied; signing the displayed policy summary");
       }
       const result = signPreparedPolicy(prepared, {
-        keyPath: path.resolve(key), outputPath: out ? path.resolve(out) : undefined,
+        keyPath: path.resolve(key), outputPath: out ? path.resolve(out) : undefined, force,
       });
       console.log(`signed policy  ${result.output}`);
       console.log(`  policy_hash=${result.policyHash}`);
@@ -234,6 +239,7 @@ async function main() {
     const client = clientIndex >= 0 ? args[clientIndex + 1] : undefined;
     const desktop = args.includes("--desktop");
     if (client !== "claude") usageError(`usage: seal ${cmd} --client claude [--desktop]${cmd === "connect" ? " [--profile <profile.json>]" : ""}`);
+    const defaultProfile = path.join(process.cwd(), "profiles", "hosts", desktop ? "claude-desktop.json" : "claude-code.json");
     const profileIndex = args.indexOf("--profile");
     const profile = profileIndex >= 0 ? args[profileIndex + 1] : undefined;
     const consumed = new Set(["--client", "claude", "--desktop"]);
@@ -244,7 +250,7 @@ async function main() {
     const integration = require(path.join(__dirname, "../src/connect.cjs"));
     try {
       const result = cmd === "connect"
-        ? integration.connect({ profilePath: path.resolve(profile), desktop })
+        ? integration.connect({ profilePath: path.resolve(profile || defaultProfile), desktop })
         : integration.disconnect({ desktop });
       console.log(`${result.message}: ${result.label}`);
       console.log(`  config: ${result.config}`);

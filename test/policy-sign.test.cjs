@@ -162,3 +162,25 @@ test("CLI sign confirmation blocks N and --yes explicitly acknowledges for CI", 
   assert.match(acceptedOutput, /ACKNOWLEDGED  --yes supplied/);
   assert.equal(fs.existsSync(out), true);
 });
+
+test("signing refuses existing destinations unless --force is explicit", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-sign-overwrite-"));
+  const input = path.join(dir, "policy.json"), key = path.join(dir, "key");
+  fs.writeFileSync(input, JSON.stringify(policy));
+  fs.writeFileSync(key, "07".repeat(32));
+  const cli = path.resolve(__dirname, "..", "bin", "seal");
+  for (const explicit of [false, true]) {
+    const out = explicit ? path.join(dir, "trusted.json") : `${input}.signed.json`;
+    const args = [cli, "policy", "sign", input, "--key", key, "--yes"];
+    if (explicit) args.push("--out", out);
+    fs.writeFileSync(out, "SENTINEL-SIGNED\n");
+    assert.throws(() => signPolicy(input, { keyPath: key, outputPath: out }), /refusing to overwrite/);
+    const refused = spawnSync(process.execPath, args, { encoding: "utf8" });
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /refusing to overwrite.*--force/);
+    assert.equal(fs.readFileSync(out, "utf8"), "SENTINEL-SIGNED\n");
+    const forced = spawnSync(process.execPath, [...args, "--force"], { encoding: "utf8" });
+    assert.equal(forced.status, 0, forced.stderr);
+    assert.deepEqual(JSON.parse(JSON.parse(fs.readFileSync(out)).payload), policy);
+  }
+});

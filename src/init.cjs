@@ -32,9 +32,15 @@ function scaffoldManifest(manifest) {
     throw new Error("manifest.server must be a non-empty string");
   if (!Array.isArray(manifest.tools)) throw new Error("manifest.tools must be an array");
 
-  const tools = manifest.tools.map((tool, index) => {
+  const names = new Set();
+  manifest.tools.forEach((tool, index) => {
     if (!isObject(tool) || typeof tool.name !== "string" || !tool.name)
       throw new Error(`manifest.tools[${index}].name must be a non-empty string`);
+    if (names.has(tool.name)) throw new Error(`duplicate tool name: ${tool.name}`);
+    names.add(tool.name);
+  });
+
+  const tools = manifest.tools.map((tool) => {
     const reason = scaffoldReason(tool);
     const rule = {
       name: tool.name,
@@ -56,7 +62,7 @@ function scaffoldManifest(manifest) {
   };
 }
 
-function initPolicy(manifestPath, { outputPath, recipe } = {}) {
+function initPolicy(manifestPath, { outputPath, recipe, force = false } = {}) {
   let manifest;
   try { manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")); }
   catch (error) { throw new Error(`cannot read manifest: ${error.message}`); }
@@ -66,7 +72,12 @@ function initPolicy(manifestPath, { outputPath, recipe } = {}) {
   const policy = generated.policy;
   const output = outputPath || defaultOutputPath(manifestPath);
   fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
-  fs.writeFileSync(output, JSON.stringify(policy, null, 2) + "\n", { mode: 0o600 });
+  try {
+    fs.writeFileSync(output, JSON.stringify(policy, null, 2) + "\n", { mode: 0o600, flag: force ? "w" : "wx" });
+  } catch (error) {
+    if (error.code === "EEXIST") throw new Error(`refusing to overwrite ${output}; use --force to replace it`);
+    throw error;
+  }
   const unverifiedAllows = policy.safety.tools
     .filter((rule) => rule.mode === "allow")
     .map((rule) => rule.name);

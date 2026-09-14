@@ -60,3 +60,22 @@ test("one-command connect selects and renders the in-repo starter", () => {
   assert.equal(applied.mcpServers.sealed.command, path.join(dir, "rust/target/debug/seal-host-rs"));
   assert.deepEqual(applied.mcpServers.sealed.args, ["11".repeat(32), "22".repeat(32)]);
 });
+
+test("CLI connect accepts the default and explicit profiles", () => {
+  const { spawnSync } = require("node:child_process");
+  const cli = path.resolve(__dirname, "..", "bin", "seal");
+  for (const explicit of [false, true]) {
+    const { dir, profile } = fixture();
+    const starters = path.join(dir, "profiles", "hosts");
+    fs.mkdirSync(starters, { recursive: true });
+    fs.copyFileSync(profile, path.join(starters, "claude-code.json"));
+    const args = [cli, "connect", "--client", "claude"];
+    if (explicit) args.push("--profile", profile);
+    const result = spawnSync(process.execPath, args, { cwd: dir, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /connected: Claude Code project/);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, ".mcp.json"))), JSON.parse(fs.readFileSync(profile)));
+    disconnect({ cwd: dir, home: dir });
+    assert.equal(fs.existsSync(path.join(dir, ".mcp.json")), false);
+  }
+});
