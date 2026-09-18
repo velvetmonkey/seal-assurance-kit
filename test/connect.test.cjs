@@ -137,3 +137,39 @@ test("CLI connect accepts the default and explicit profiles", () => {
     assert.equal(fs.existsSync(path.join(dir, ".mcp.json")), false);
   }
 });
+
+for (const name of ["plain", "weird\\that", "weird\\\\that", 'weird\\path"dir', 'quote"dir', "dollar$&dir"]) {
+  test(`starter profile preserves literal path bytes: ${JSON.stringify(name)}`, () => {
+    for (const desktop of [false, true]) {
+      const { dir: parent } = fixture();
+      const dir = path.join(parent, name);
+      const starters = path.join(dir, "profiles", "hosts");
+      fs.mkdirSync(starters, { recursive: true });
+      fs.mkdirSync(path.join(dir, ".seal"), { recursive: true });
+      fs.writeFileSync(path.join(dir, ".seal", "config.pub"), "AB".repeat(32) + "\n");
+      fs.writeFileSync(path.join(dir, ".seal", "approval.pub"), "CD".repeat(32) + "\n");
+      const server = {
+        command: "/ABS/PATH/rust/target/debug/seal-host-rs",
+        args: ["/ABS/PATH", "/ABS/PATH/data:/ABS/PATH/cache", "CONFIG_PUBLIC_KEY_HEX", "APPROVAL_PUBLIC_KEY_HEX"],
+        env: { ROOT: "/ABS/PATH", KEYS: "CONFIG_PUBLIC_KEY_HEX:APPROVAL_PUBLIC_KEY_HEX" },
+        enabled: true, retries: 3, optional: null,
+      };
+      fs.writeFileSync(path.join(starters, desktop ? "claude-desktop.json" : "claude-code.json"),
+        JSON.stringify({ mcpServers: { sealed: server } }));
+      const options = { cwd: dir, home: dir, desktop };
+      assert.doesNotThrow(() => connect(options));
+      const text = fs.readFileSync(locations(options).config, "utf8");
+      const expected = { mcpServers: { sealed: {
+        command: dir + "/rust/target/debug/seal-host-rs",
+        args: [dir, dir + "/data:" + dir + "/cache", "ab".repeat(32), "cd".repeat(32)],
+        env: { ROOT: dir, KEYS: "ab".repeat(32) + ":" + "cd".repeat(32) },
+        enabled: true, retries: 3, optional: null,
+      } } };
+      assert.deepEqual(JSON.parse(text), expected);
+      assert.equal(text, JSON.stringify(expected, null, 2) + "\n");
+      assert.equal(connect(options).changed, false);
+      disconnect(options);
+      assert.equal(fs.existsSync(locations(options).config), false);
+    }
+  });
+}

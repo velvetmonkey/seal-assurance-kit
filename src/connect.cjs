@@ -38,10 +38,23 @@ function renderStarterProfile(text, cwd) {
     if (!/^[0-9a-fA-F]{64}$/.test(value)) throw new Error(`${file} must contain one 32-byte public key in hex`);
     return value.toLowerCase();
   };
-  return text
-    .replaceAll("/ABS/PATH", cwd)
-    .replaceAll("CONFIG_PUBLIC_KEY_HEX", readKey("config.pub") || "CONFIG_PUBLIC_KEY_HEX")
-    .replaceAll("APPROVAL_PUBLIC_KEY_HEX", readKey("approval.pub") || "APPROVAL_PUBLIC_KEY_HEX");
+  const profile = JSON.parse(text);
+  const replacements = {
+    "/ABS/PATH": cwd,
+    CONFIG_PUBLIC_KEY_HEX: readKey("config.pub") || "CONFIG_PUBLIC_KEY_HEX",
+    APPROVAL_PUBLIC_KEY_HEX: readKey("approval.pub") || "APPROVAL_PUBLIC_KEY_HEX",
+  };
+  const replaceValues = (value) => {
+    if (typeof value === "string")
+      return value.replace(/\/ABS\/PATH|CONFIG_PUBLIC_KEY_HEX|APPROVAL_PUBLIC_KEY_HEX/g,
+        (token) => replacements[token]);
+    if (Array.isArray(value)) return value.map(replaceValues);
+    if (value !== null && typeof value === "object") {
+      for (const key of Object.keys(value)) value[key] = replaceValues(value[key]);
+    }
+    return value;
+  };
+  return JSON.stringify(replaceValues(profile));
 }
 
 function connect({ profilePath, cwd = process.cwd(), home = os.homedir(), desktop = false }) {
