@@ -4,6 +4,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { isDeepStrictEqual } = require("node:util");
 
 function sha256(text) { return crypto.createHash("sha256").update(text).digest("hex"); }
 
@@ -61,8 +62,12 @@ function connect({ profilePath, cwd = process.cwd(), home = os.homedir(), deskto
   if (fs.existsSync(loc.metadata)) {
     const metadata = parseObject(fs.readFileSync(loc.metadata, "utf8"), "Seal connection metadata");
     const current = fs.existsSync(loc.config) ? fs.readFileSync(loc.config, "utf8") : "";
-    if (sha256(current) === metadata.applied_sha256)
+    if (sha256(current) === metadata.applied_sha256) {
+      if (metadata.server !== names[0] || !Object.hasOwn(metadata, "server_definition") ||
+          !isDeepStrictEqual(metadata.server_definition, profile.mcpServers[names[0]]))
+        throw new Error(`requested server ${names[0]} does not match recorded server ${metadata.server} and definition; disconnect first before connecting this profile`);
       return { changed: false, ...loc, server: names[0], message: "already connected; no changes" };
+    }
     throw new Error(`existing Seal connection metadata overlaps edits in ${loc.config}; disconnect or recover manually`);
   }
 
@@ -85,6 +90,7 @@ function connect({ profilePath, cwd = process.cwd(), home = os.homedir(), deskto
     before_sha256: sha256(before),
     applied_sha256: sha256(applied),
     server: name,
+    server_definition: profile.mcpServers[name],
   };
   // Persist rollback bytes before changing the config. If applying fails or the
   // process stops here, disconnect can recognize and clear the unapplied record.
