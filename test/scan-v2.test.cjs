@@ -253,6 +253,10 @@ test("diff catches existing uncovered tools and annotation-only reclassification
   assert.match(result.stdout, /FAIL  UNCOVERED tools \(3\):\s+file.write\s+http.post\s+jira.deleteIssue/);
   assert.match(result.stdout, /CHANGED \(1\):\s+db.query  ->  readonly -> allowed-ungated/);
   assert.match(result.stdout, /0 new, 0 removed, 1 changed/);
+  const invalid = runDiffCase(t, [], [{ name: "write_thing" }], null);
+  assert.equal(invalid.status, 1, invalid.stdout + invalid.stderr);
+  assert.match(invalid.stdout, /FAIL  TRUSTED CONFIG INVALID/);
+  assert.doesNotMatch(invalid.stderr, /TypeError|Cannot read/);
 });
 
 test("diff reports changed clean records without failing or treating key order as a change", async (t) => {

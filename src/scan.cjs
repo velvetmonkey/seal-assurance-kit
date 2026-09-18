@@ -197,6 +197,8 @@ function diff(oldPath, newPath, policyPath) {
   const policy = readJson(policyPath);
   console.log("FULL SCAN of new manifest:");
   const passed = scan(newPath, policyPath);
+  // Invalid policies cannot support the secondary classification view.
+  if (!passed && !validateTrustedConfig(policy).ok) return false;
   const added = newTools.filter((t) => !oldByName.has(t.name));
   const removed = [...oldByName.keys()].filter((n) => !newNames.has(n));
   const changed = newTools.filter((t) => oldByName.has(t.name) &&
