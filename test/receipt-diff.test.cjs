@@ -72,8 +72,8 @@ test("same displayed args, stale stored hash: tamper flag, exit 2, no diff", () 
   r.arguments = { op: "orset.add", key: "TAMPERED" }; // stored hashes now lie
   const { code, out } = run([FIX("receipt-allow.json"), write("stale-hash.json", r)]);
   assert.equal(code, 2);
-  assert.match(out, /stale or tampered/);
-  assert.match(out, /INTEGRITY FLAG/);
+  assert.match(out, /canonical_request: does not equal the line derived from \(tool, arguments\)/);
+  assert.match(out, /FAIL/);
   assert.ok(!out.includes("AUTHORIZATION-SURFACE DRIFT ("), "must not diff tampered evidence");
 });
 
@@ -159,4 +159,79 @@ test("unparseable-request receipts diff by raw line identity, never a false 'tam
   res = run([FIX("receipt-allow.json"), p1]);
   assert.equal(res.code, 1, res.out);
   assert.match(res.out, /unparseable-request/);
+});
+
+
+test("v3 missing release_status: either input fails before classification", async () => {
+  const F = await fmt();
+  const r = JSON.parse(fs.readFileSync(FIX("object-b-v2-host-04f7ba83.json"), "utf8"));
+  delete r.release_status;
+  const shape = F.validateReceipt(r);
+  assert.equal(shape.ok, false);
+  assert.equal(shape.version, "v3");
+  assert.match(shape.errors.join("; "), /release_status:/);
+  const malformed = write("v3-missing-release.json", r);
+  for (const pair of [
+    [malformed, FIX("receipt-allow.json")],
+    [FIX("receipt-allow.json"), malformed],
+  ]) {
+    const { code, out } = run(pair);
+    assert.equal(code, 2, out);
+    assert.match(out, /FAIL/);
+    assert.match(out, /release_status:/);
+    assert.ok(!out.includes("AUTHORIZATION-SURFACE DRIFT ("), "must not classify malformed evidence");
+  }
+});
+
+test("valid legacy v1 HMAC signature still permits a diff", async () => {
+  const F = await fmt();
+  const r = allow();
+  r.seal_receipt = "v1";
+  delete r.args_hash;
+  delete r.approval;
+  r.signature = { algorithm: "HMAC-SHA256", value: "legacy" };
+  const shape = F.validateReceipt(r);
+  assert.equal(shape.ok, true);
+  assert.equal(shape.version, "v1");
+  const p = write("v1-hmac.json", r);
+  const { code, out } = run([p, p]);
+  assert.equal(code, 0, out);
+  assert.match(out, /no authorization-surface drift/);
+});
+
+
+test("valid signed v3 receipts diff; a changed signature fails on either input", async () => {
+  const crypto = require("node:crypto");
+  const { receiptSignatureValid } = require("../src/verify.cjs");
+  const F = await fmt();
+  const r = JSON.parse(fs.readFileSync(FIX("receipt-block.json"), "utf8"));
+  delete r.seal_receipt;
+  Object.assign(r, {
+    record_type: "seal.authorization-decision", record_version: 3,
+    release_status: "NOT_APPLICABLE", operation_id: "ab".repeat(32),
+    durability_class: "asserted_local_fsync",
+  });
+  const { privateKey, publicKey } = crypto.generateKeyPairSync("ed25519");
+  r.signature = {
+    domain: F.RECEIPT_SIGNATURE_DOMAIN, algorithm: "Ed25519",
+    public_key: publicKey.export({ format: "der", type: "spki" }).subarray(-32).toString("hex"),
+    encoding: "base64url-nopad",
+    value: crypto.sign(null, Buffer.from(F.receiptSignaturePreimage(r)), privateKey).toString("base64url"),
+  };
+  assert.equal(F.validateReceipt(r, { ed25519Verify: receiptSignatureValid }).ok, true);
+  const valid = write("valid-signed-v3.json", r);
+  const result = run([valid, valid]);
+  assert.equal(result.code, 0, result.out);
+  assert.match(result.out, /no authorization-surface drift/);
+  const signature = Buffer.from(r.signature.value, "base64url");
+  signature[0] ^= 1;
+  r.signature.value = signature.toString("base64url");
+  const invalid = write("invalid-signed-v3.json", r);
+  for (const pair of [[invalid, valid], [valid, invalid]]) {
+    const { code, out } = run(pair);
+    assert.equal(code, 2, out);
+    assert.match(out, /FAIL/);
+    assert.match(out, /Ed25519 verification failed/);
+    assert.ok(!out.includes("AUTHORIZATION-SURFACE DRIFT ("));
+  }
 });
