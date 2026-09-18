@@ -218,8 +218,10 @@ test("scan and diff accept array and envelope manifests with name-only entries",
         ["scan", "diff", wrapped, bare, config],
       ]) {
         const result = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8" });
-        assert.equal(result.status, tools.length ? 0 : (args[1] === "diff" ? 0 : 1),
-          result.stdout + result.stderr);
+        // diff now gates its exit on a full scan of the new manifest (that is
+        // this PR's fix), so it must agree with plain `scan` here too — an
+        // orphan ALLOW rule fails both, not just the direct scan.
+        assert.equal(result.status, tools.length ? 0 : 1, result.stdout + result.stderr);
         assert.doesNotMatch(result.stderr, /ManifestValidationError/);
         if (args[1] === "diff") assert.match(result.stdout, /0 new, 0 removed/);
         else if (tools.length) assert.match(result.stdout, /1 read-only/);
