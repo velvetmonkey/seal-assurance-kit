@@ -13,6 +13,8 @@ const path = require("path");
 const { isDeepStrictEqual } = require("node:util");
 const { formatParticipation, validateTrustedConfig } = require("./trusted-config.cjs");
 
+const { scaffoldReason } = require("./tool-annotations.cjs");
+
 const MUTATING_VERBS = /\b(write|delete|remove|drop|send|pay|transfer|execute|exec|run|create|insert|update|patch|put|post|issue|revoke|mint|grant|set|modify|destroy|purge|deploy|publish|approve|move|rename)\b/i;
 const READONLY_VERBS = /\b(read|get|list|query|search|fetch|show|view|describe|inspect|status|count)\b/i;
 
@@ -73,8 +75,10 @@ function v2ConditionalModes(name, policy) {
 // mutating | readonly  — annotations win, then policy-declared effect, then heuristic.
 function effectOf(tool, rule) {
   const a = tool.annotations || {};
-  if (a.readOnlyHint === true) return "readonly";
-  if (a.destructiveHint === true || a.idempotentHint === false) return "mutating";
+  const reason = scaffoldReason(tool);
+  if (reason === "readonly") return "readonly";
+  if (reason === "conflict" || reason === "destructive") return "mutating";
+  if (a.idempotentHint === false) return "mutating";
   if (rule && rule.effect) return rule.effect;
   const text = `${tool.name} ${tool.description || ""}`;
   if (MUTATING_VERBS.test(text)) return "mutating";
@@ -140,7 +144,9 @@ function scan(toolsPath, policyPath) {
   const policy = readJson(policyPath);
   if (!validateAndShowComposition(policy)) return false;
   const buckets = { guarded: [], denied: [], "allowed-ungated": [], uncovered: [], readonly: [] };
+  const conflicts = [];
   for (const t of tools) {
+    if (scaffoldReason(t) === "conflict") conflicts.push(t);
     const c = classify(t, policy);
     buckets[c.bucket].push({ name: t.name, guard: c.guard, effect: c.effect });
   }
@@ -156,6 +162,7 @@ function scan(toolsPath, policyPath) {
     for (const x of arr) console.log(`  ${fmt(x)}`);
   };
   console.log(`seal scan  ${toolsPath}  x  ${policyPath}   (${tools.length} tools)`);
+  show("WARN  ANNOTATION CONFLICT (readOnlyHint=true and destructiveHint=true; treated as mutating)", conflicts);
   show("GUARDED", buckets.guarded, (x) => `${x.name}  [${x.guard}]`);
   show("DENIED", buckets.denied);
   show("readonly (informational)", buckets.readonly, (x) => `${x.name}${x.guard ? `  [${x.guard}]` : ""}`);

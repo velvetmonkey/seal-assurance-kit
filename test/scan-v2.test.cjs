@@ -290,3 +290,54 @@ test("diff passes a clean covered addition and keeps the removed view", (t) => {
   assert.match(result.stdout, /REMOVED \(1\):\s+retired/);
   assert.match(result.stdout, /PASS  full scan of new manifest/);
 });
+
+for (const [label, annotations, effect] of [
+  ["conflict", { readOnlyHint: true, destructiveHint: true }, "mutating"],
+  ["readonly", { readOnlyHint: true }, "readonly"],
+  ["destructive", { destructiveHint: true }, "mutating"],
+]) {
+  test(`${label} annotations keep their effect across coverage modes and policy versions`, () => {
+    const tool = { name: "read_item", annotations };
+    for (const mode of [null, "allow", "guard", "deny"]) {
+      const legacy = { rules: mode ? { read_item: { guard: mode, effect: "readonly" } } : {} };
+      const v2 = { safety: { tools: mode ? [{ name: tool.name, mode }] : [] } };
+      for (const config of [legacy, v2]) {
+        const result = classify(tool, config);
+        assert.equal(result.effect, effect);
+        const bucket = mode === "guard" ? "guarded" : mode === "deny" ? "denied"
+          : mode === "allow" ? (effect === "mutating" ? "allowed-ungated" : "readonly")
+          : (config === v2 || effect === "mutating" ? "uncovered" : "readonly");
+        assert.equal(result.bucket, bucket);
+      }
+    }
+    assert.equal(classify(tool, policy("allow")).effect, effect);
+  });
+}
+
+test("unknown annotations retain scan-only fallback order", () => {
+  for (const [tool, rules, effect] of [
+    [{ name: "read", annotations: { idempotentHint: false } }, { read: { effect: "readonly" } }, "mutating"],
+    [{ name: "write" }, { write: { effect: "readonly" } }, "readonly"],
+    [{ name: "read write" }, {}, "mutating"],
+    [{ name: "read" }, {}, "readonly"],
+    [{ name: "opaque" }, {}, "mutating"],
+  ]) assert.equal(classify(tool, { rules }).effect, effect);
+});
+
+test("scan names annotation conflicts with missing, allowed, guarded, and denied coverage", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-scan-conflict-"));
+  const manifest = path.join(dir, "manifest.json");
+  const configPath = path.join(dir, "policy.json");
+  fs.writeFileSync(manifest, JSON.stringify({ server: "matrix/server", tools: [
+    { name: "read_item", annotations: { readOnlyHint: true, destructiveHint: true } },
+  ] }));
+  for (const mode of [null, "allow", "guard", "deny"]) {
+    const config = baseConfig();
+    config.safety.tools = mode ? [{ name: "read_item", mode, target: [{ full_arguments: true }] }] : [];
+    fs.writeFileSync(configPath, JSON.stringify(config));
+    const result = spawnSync(process.execPath, [path.resolve(__dirname, "../bin/seal"), "scan", manifest, configPath], { encoding: "utf8" });
+    assert.equal(result.status, mode === "guard" || mode === "deny" ? 0 : 1, result.stdout + result.stderr);
+    assert.match(result.stdout, /WARN  ANNOTATION CONFLICT \(readOnlyHint=true and destructiveHint=true; treated as mutating\) \(1\):\n  read_item/);
+    assert.doesNotMatch(result.stdout, /readonly \(informational\)/);
+  }
+});

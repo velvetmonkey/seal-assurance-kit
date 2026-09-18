@@ -204,3 +204,27 @@ test("single-role kernels and prod-db still accept one guarded tool", () => {
     assert.ok(referencedTools(result.policy).includes("do_thing"));
   }
 });
+
+test("init preserves annotation reasons and scan agrees on conflict safety", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-init-conflict-"));
+  const manifest = path.join(dir, "manifest.json");
+  const output = path.join(dir, "policy.json");
+  const tools = [
+    { name: "read_conflict", annotations: { readOnlyHint: true, destructiveHint: true } },
+    { name: "read_only", annotations: { readOnlyHint: true } },
+    { name: "read_destructive", annotations: { destructiveHint: true } },
+    { name: "opaque" },
+  ];
+  fs.writeFileSync(manifest, JSON.stringify({ server: "conflict/server", tools }));
+  run(["init", manifest, "--out", output]);
+  const config = JSON.parse(fs.readFileSync(output));
+  assert.deepEqual(config.safety.tools.map(rule => [rule._seal_scaffold.reason, rule.mode, rule._comment]), [
+    ["conflict", "guard", undefined],
+    ["readonly", "allow", "unverified suggestion — server self-described readOnly"],
+    ["destructive", "guard", undefined],
+    ["unknown", "guard", undefined],
+  ]);
+  const { classify } = require("../src/scan.cjs");
+  assert.deepEqual(tools.map(tool => classify(tool, config).effect), ["mutating", "readonly", "mutating", "mutating"]);
+  assert.match(run(["scan", manifest, output]), /ANNOTATION CONFLICT/);
+});
