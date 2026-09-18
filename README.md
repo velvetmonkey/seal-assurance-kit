@@ -4,13 +4,25 @@
 
 **CLI that tells you the truth about your boundary in one line: PASS, FAIL, or the exact gap.**
 
+Seal is the approval-gate product. Its companion tools let you examine
+receipt and assurance evidence separately from the running gate.
+
+| I want to… | Start here | What it does |
+| --- | --- | --- |
+| Install the gate | [seal](https://github.com/velvetmonkey/seal) | Gate selected Claude Code MCP tool calls with approval tied to the exact request. |
+| Check a receipt | [seal-check](https://github.com/velvetmonkey/seal-check) | Check supported decision receipts locally in your browser. |
+| Review the evidence | [seal-assurance-kit](https://github.com/velvetmonkey/seal-assurance-kit) | Run receipt, policy-coverage and conformance checks from the command line. |
+
+For audit detail, see the [architecture and verification relationships](https://github.com/velvetmonkey/seal/blob/main/docs/assurance/architecture.md).
+
 `seal verify` re-derives a receipt. `seal scan` finds unguarded tools (and exits 1). `seal test` replays the corpus. `seal adequacy` checks whether your evidence actually separates the labels. Output is boring, rerun-able, and honest.
 
 ## Quick start: first PASS
 
-**30-second showcase — the family's fastest PASS**
+**30-second receipt-checking example**
 
-No Lean toolchain, no Docker, no build, no network, zero npm dependencies: just Node and this repo. This is the family front door — the quickest way to watch a real receipt re-derive to `PASS VERIFIED` before you touch anything heavier.
+No Lean toolchain, no Docker, no build, no network, zero npm dependencies: just Node and this repo. Start here to review a sample receipt. To install the approval gate,
+use [seal](https://github.com/velvetmonkey/seal).
 
 ```bash
 bash scripts/showcase.sh
@@ -33,7 +45,7 @@ Prints `PASS VERIFIED` for a good receipt and `FAIL` (exit 1) for an uncovered s
 > **Claim:** policy-covered request-effects recognised by the compatible MCP boundary reach the downstream child MCP server only after every applicable Lean kernel returns Allow. Effects configured as guarded additionally require a matching live approval record. Seam failures block; every mediated decision emits replayable evidence.
 > **Non-claim:** the deployed host is not proved end to end, and canonical parser rejection is not currently the runtime gate. Host `ApprovalRecord` tokens are a separate signed channel from the v2 kernel-defined approval tuple. “Canonical” in Seal names the pinned kernel byte rule, not RFC 8785/JCS. Seal verifies the configured authorization evidence. Whether that evidence represents the intended human, device or service is an identity and key-custody assumption, not a proved property.
 <!-- truthbox:end -->
-> Map: [EVALUATOR-START.md](https://github.com/velvetmonkey/seal/blob/main/EVALUATOR-START.md) · profile detail: [PROFILE.md](https://github.com/velvetmonkey/seal-host/blob/main/PROFILE.md) — both in public repos; the links resolve for everyone.
+> Map: [EVALUATOR-START.md](https://github.com/velvetmonkey/seal/blob/main/docs/assurance/evaluator-start.md) · profile detail: [PROFILE.md](https://github.com/velvetmonkey/seal-host/blob/main/PROFILE.md) — both in public repos; the links resolve for everyone.
 
 ## What happens when you need evidence for a boundary review
 
@@ -48,9 +60,16 @@ The [Verify in five minutes](#verify-in-five-minutes) block below runs each of t
 
 ## For evaluators and auditors
 
-Seal's proof story is intentionally narrow. The Lean theorems cover the mediation kernel and selected model properties. The binaries and browser artifacts are connected to that proof by reproducible conformance tests, not by a theorem about every compiled instruction.
+Lean proofs establish specified properties of decision models; they do not
+establish correctness of the whole deployed system. For the shipped Seal
+product, correspondence between the proved authorization model and the
+shipped authorization path is currently neither tested nor proved.
+Reproducible builds and finite conformance checks establish only their
+stated results; receipt replay does not close that gap.
 
-Start with the family [claims matrix](https://github.com/velvetmonkey/seal/blob/main/docs/CLAIMS-MATRIX.md) (one table: proven / tested / assumed / not claimed), then [docs/PROOF-REFERENCE.md](docs/PROOF-REFERENCE.md) for theorem names and file locations, [docs/CONFORMANCE.md](docs/CONFORMANCE.md) for the byte-identity claim, and [docs/TCB.md](docs/TCB.md) for what remains trusted.
+See [Seal's current shipped-product assurance scope](https://github.com/velvetmonkey/seal/blob/main/README.md#guarantees-and-non-guarantees).
+
+Start with the [Archived family claims matrix](https://github.com/velvetmonkey/seal/blob/main/docs/archive/CLAIMS-MATRIX.md) (one table: proven / tested / assumed / not claimed), then [docs/PROOF-REFERENCE.md](docs/PROOF-REFERENCE.md) for theorem names and file locations, [docs/CONFORMANCE.md](docs/CONFORMANCE.md) for the byte-identity claim, and [docs/TCB.md](docs/TCB.md) for what remains trusted.
 
 Mandatory non-claims (canonical copy: [docs/LIMITATIONS.md](docs/LIMITATIONS.md)):
 
@@ -153,24 +172,21 @@ a standalone repo later; the implementation lives in `src/receipt-diff.cjs` eith
 A `seal scan` exit 1 on a deliberately incomplete policy is the auditor doing
 its job; wire it into CI so new uncovered tools fail the build.
 
-## The Seal family
+## Audit the wider Seal family
 
-_The Seal fleet repositories are public; these links resolve for everyone. `witness-check` remains proprietary._
+The [architecture and verification relationships](https://github.com/velvetmonkey/seal/blob/main/docs/assurance/architecture.md)
+describe the product path, proof sources, supporting components and shared
+verification dependencies.
 
-- [seal](https://github.com/velvetmonkey/seal): the public umbrella story, product map, and evaluator path.
-- [mcp-seal-dev](https://github.com/velvetmonkey/mcp-seal-dev): The rulebook, proven.
-- [seal-host](https://github.com/velvetmonkey/seal-host): The guard at the door.
-- [seal-check](https://github.com/velvetmonkey/seal-check): Don't trust. Verify.
-- [seal-live-demo](https://github.com/velvetmonkey/seal-live-demo): Watch it work.
-- [seal-assurance-kit](https://github.com/velvetmonkey/seal-assurance-kit): Check your own boundary.
-- [witness-check](https://github.com/velvetmonkey/witness-check): The sufficiency analyzer. (proprietary)
-- [seal-verify-action](https://github.com/velvetmonkey/seal-verify-action): Gate receipts in CI.
+The browser checker and assurance CLI can run separately from the Seal
+deployment. They share kernel and receipt-format dependencies, so agreement
+between them can also reflect a shared defect.
 
 ## Documentation
 
 - [What Seal is NOT](docs/WHAT-SEAL-IS-NOT.md) — read this first
 - [Deployment: install to first PASS/FAIL](docs/DEPLOYMENT.md)
-- [Family claims matrix](https://github.com/velvetmonkey/seal/blob/main/docs/CLAIMS-MATRIX.md) · [family architecture map](https://github.com/velvetmonkey/seal/blob/main/docs/ARCHITECTURE.md) (public umbrella)
+- [Archived family claims matrix](https://github.com/velvetmonkey/seal/blob/main/docs/archive/CLAIMS-MATRIX.md) · [family architecture map](https://github.com/velvetmonkey/seal/blob/main/docs/assurance/architecture.md) (public umbrella)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Input schemas: policy / tools / labels](docs/SCHEMAS.md)
 - [Threat model](docs/THREAT-MODEL.md)
