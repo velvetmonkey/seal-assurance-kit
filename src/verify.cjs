@@ -111,7 +111,7 @@ function isObject(value) {
 
 function spineJsonIsCanonical(value) {
   if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "number") return Number.isFinite(value) && Math.abs(value) <= Number.MAX_SAFE_INTEGER;
   if (Array.isArray(value)) return value.every(spineJsonIsCanonical);
   return isObject(value) && Object.values(value).every(spineJsonIsCanonical);
 }
