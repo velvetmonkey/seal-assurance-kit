@@ -218,8 +218,10 @@ test("scan and diff accept array and envelope manifests with name-only entries",
         ["scan", "diff", wrapped, bare, config],
       ]) {
         const result = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8" });
-        assert.equal(result.status, tools.length ? 0 : (args[1] === "diff" ? 0 : 1),
-          result.stdout + result.stderr);
+        // diff now gates its exit on a full scan of the new manifest (that is
+        // this PR's fix), so it must agree with plain `scan` here too — an
+        // orphan ALLOW rule fails both, not just the direct scan.
+        assert.equal(result.status, tools.length ? 0 : 1, result.stdout + result.stderr);
         assert.doesNotMatch(result.stderr, /ManifestValidationError/);
         if (args[1] === "diff") assert.match(result.stdout, /0 new, 0 removed/);
         else if (tools.length) assert.match(result.stdout, /1 read-only/);
@@ -229,4 +231,62 @@ test("scan and diff accept array and envelope manifests with name-only entries",
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+function runDiffCase(t, oldTools, newTools, config) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-scan-diff-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const files = ["old.json", "new.json", "policy.json"].map((name) => path.join(dir, name));
+  [oldTools, newTools, config].forEach((doc, i) => fs.writeFileSync(files[i], JSON.stringify(doc)));
+  const cli = path.resolve(__dirname, "../bin/seal");
+  const diff = spawnSync(process.execPath, [cli, "scan", "diff", ...files], { encoding: "utf8" });
+  const scan = spawnSync(process.execPath, [cli, "scan", files[1], files[2]], { encoding: "utf8" });
+  assert.equal(diff.status, scan.status, diff.stdout + diff.stderr);
+  return diff;
+}
+
+test("diff catches existing uncovered tools and annotation-only reclassification", (t) => {
+  const old = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../fixtures/tools.json")));
+  const config = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../fixtures/policy-v2.json")));
+  const current = structuredClone(old);
+  current.tools.find((tool) => tool.name === "db.query").annotations = { destructiveHint: true };
+  const result = runDiffCase(t, old, current, config);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stdout, /FAIL  UNCOVERED tools \(3\):\s+file.write\s+http.post\s+jira.deleteIssue/);
+  assert.match(result.stdout, /CHANGED \(1\):\s+db.query  ->  readonly -> allowed-ungated/);
+  assert.match(result.stdout, /0 new, 0 removed, 1 changed/);
+  const invalid = runDiffCase(t, [], [{ name: "write_thing" }], null);
+  assert.equal(invalid.status, 1, invalid.stdout + invalid.stderr);
+  assert.match(invalid.stdout, /FAIL  TRUSTED CONFIG INVALID/);
+  assert.doesNotMatch(invalid.stderr, /TypeError|Cannot read/);
+});
+
+test("diff reports changed clean records without failing or treating key order as a change", async (t) => {
+  const tool = { name: "read_item", description: "Read an item", annotations: { readOnlyHint: true },
+    inputSchema: { type: "object", properties: { id: { type: "string" } } } };
+  const cases = [
+    ["description", { ...tool, description: "Read one item" }, true],
+    ["annotations", { ...tool, annotations: { readOnlyHint: true, title: "Read" } }, true],
+    ["schema", { ...tool, inputSchema: { type: "object", properties: { id: { type: "number" } } } }, true],
+    ["key order", { inputSchema: { properties: { id: { type: "string" } }, type: "object" },
+      annotations: tool.annotations, description: tool.description, name: tool.name }, false],
+  ];
+  for (const [name, current, changed] of cases) await t.test(name, (t) => {
+    const result = runDiffCase(t, [tool], [current], baseConfig());
+    assert.equal(result.status, 0, result.stdout);
+    if (changed) assert.match(result.stdout, /CHANGED \(1\):\s+read_item  ->  readonly -> readonly/);
+    else assert.doesNotMatch(result.stdout, /CHANGED/);
+  });
+});
+
+test("diff passes a clean covered addition and keeps the removed view", (t) => {
+  const read = { name: "read_item", annotations: { readOnlyHint: true } };
+  const config = baseConfig();
+  config.safety.tools.push({ name: "write_item", mode: "guarded", match: { type: "always" }, target: [{ full_arguments: true }] });
+  const result = runDiffCase(t, [read, { name: "retired" }], [read, { name: "write_item", annotations: { destructiveHint: true } }], config);
+  assert.equal(result.status, 0, result.stdout);
+  assert.match(result.stdout, /SECONDARY VIEW/);
+  assert.match(result.stdout, /NEW since last scan \(1\):\s+write_item  ->  guarded/);
+  assert.match(result.stdout, /REMOVED \(1\):\s+retired/);
+  assert.match(result.stdout, /PASS  full scan of new manifest/);
 });
