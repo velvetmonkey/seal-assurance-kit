@@ -16,7 +16,34 @@ const MUTATING_VERBS = /\b(write|delete|remove|drop|send|pay|transfer|execute|ex
 const READONLY_VERBS = /\b(read|get|list|query|search|fetch|show|view|describe|inspect|status|count)\b/i;
 
 function readJson(p) { return JSON.parse(fs.readFileSync(p, "utf8")); }
-function toolList(doc) { return Array.isArray(doc) ? doc : (doc.tools || []); }
+function toolList(doc, manifestPath) {
+  const invalid = (reason) => {
+    const error = new Error(`Invalid tool manifest ${JSON.stringify(manifestPath)}: ${reason}`);
+    error.name = "ManifestValidationError";
+    throw error;
+  };
+  let tools;
+  if (Array.isArray(doc)) {
+    tools = doc;
+  } else {
+    if (doc === null || typeof doc !== "object") {
+      invalid("root must be an array or an object with a tools array");
+    }
+    if (!Object.prototype.hasOwnProperty.call(doc, "tools") || !Array.isArray(doc.tools)) {
+      invalid("tools must be present and must be an array");
+    }
+    tools = doc.tools;
+  }
+  for (const [index, tool] of tools.entries()) {
+    if (tool === null || typeof tool !== "object" || Array.isArray(tool)) {
+      invalid(`tools[${index}] must be a tool object`);
+    }
+    if (typeof tool.name !== "string") {
+      invalid(`tools[${index}].name must be a string`);
+    }
+  }
+  return tools;
+}
 
 function isV2Policy(policy) {
   return policy && policy.safety && Array.isArray(policy.safety.tools);
@@ -108,7 +135,7 @@ function validateAndShowComposition(policy) {
 
 function scan(toolsPath, policyPath) {
   const toolDoc = readJson(toolsPath);
-  const tools = toolList(toolDoc);
+  const tools = toolList(toolDoc, toolsPath);
   const policy = readJson(policyPath);
   if (!validateAndShowComposition(policy)) return false;
   const buckets = { guarded: [], denied: [], "allowed-ungated": [], uncovered: [], readonly: [] };
@@ -156,8 +183,8 @@ function scan(toolsPath, policyPath) {
 }
 
 function diff(oldPath, newPath, policyPath) {
-  const oldNames = new Set(toolList(readJson(oldPath)).map((t) => t.name));
-  const newTools = toolList(readJson(newPath));
+  const oldNames = new Set(toolList(readJson(oldPath), oldPath).map((t) => t.name));
+  const newTools = toolList(readJson(newPath), newPath);
   const policy = readJson(policyPath);
   if (!validateAndShowComposition(policy)) return false;
   const added = newTools.filter((t) => !oldNames.has(t.name));
