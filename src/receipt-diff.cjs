@@ -25,8 +25,8 @@
 // `deny_kernel` (both AUTH); the transcript cannot hide an authorization
 // change, and keeping it MINOR stops a reason-only edit reading as drift.
 //
-// Exit codes (kit convention): 0 no authorization-surface drift (MINOR-only
-// is 0) · 1 drift · 2 malformed / legacy-rejected / integrity-flagged ·
+// Exit codes (kit convention): 0 no authorization-surface or schema drift
+// (MINOR-only is 0) · 1 drift · 2 malformed / legacy-rejected / integrity-flagged ·
 // 3 internal error.
 
 const fs = require("fs");
@@ -42,6 +42,8 @@ const path = require("path");
 const AUTH_FIELDS = [
   "tool", "arguments", "canonical_request_sha256", "args_hash", "verdict", "authorization",
   "deny_kernel", "bypass", "approval", "granted_capabilities", "kernel_config",
+  "release_status", "operation_id", "release_valid_until", "post_state_hash",
+  "release_frame", "request_sha256", "host_identity",
 ];
 const AUTH_SUBFIELDS = [["kernel_identity", "wasm_sha256"]];
 
@@ -49,6 +51,9 @@ const AUTH_SUBFIELDS = [["kernel_identity", "wasm_sha256"]];
 const MINOR_FIELDS = [
   "reason", "now", "asserted_provenance", "signature", "policy_id",
   "certs", "emitted_bytes",
+  // Version changes are gated separately by schemaDrift; parse-error wording
+  // does not change the raw request identity carried by request_sha256.
+  "record_version", "request_parse_error",
 ];
 const MINOR_SUBFIELDS = [["kernel_identity", "self_verified"]];
 
@@ -250,7 +255,7 @@ async function receiptDiff(fileA, fileB, { json = false } = {}) {
 
   const drift = schemaDrift(A, B);
   const { auth, minor } = diffReceipts(F, A, B);
-  const exit = auth.length ? 1 : 0;
+  const exit = auth.length || drift ? 1 : 0;
 
   if (json) {
     console.log(JSON.stringify({
@@ -260,7 +265,7 @@ async function receiptDiff(fileA, fileB, { json = false } = {}) {
       schema_drift: drift,
       authorization: auth,
       minor,
-      result: exit ? "AUTHORIZATION DRIFT" : "NO AUTHORIZATION-SURFACE DRIFT",
+      result: auth.length ? "AUTHORIZATION DRIFT" : drift ? "SCHEMA DRIFT" : "NO AUTHORIZATION-SURFACE DRIFT",
       exit,
     }, null, 2));
     return exit;
@@ -271,13 +276,17 @@ async function receiptDiff(fileA, fileB, { json = false } = {}) {
   if (drift) console.log(`NOTE  ${drift.note}`);
   console.log(`AUTHORIZATION-SURFACE DRIFT (${auth.length})`);
   for (const d of auth) console.log(`  ${d.field}: ${show(d.a)} -> ${show(d.b)}${d.note ? `   [${d.note}]` : ""}`);
-  if (!auth.length) console.log("  (none — the two receipts authorize the same thing at this surface)");
+  if (!auth.length) console.log(drift
+    ? "  (none in the classified fields — schema generations differ)"
+    : "  (none — the two receipts authorize the same thing at this surface)");
   console.log(`MINOR (${minor.length})`);
   for (const d of minor) console.log(`  ${d.field}: ${show(d.a)} -> ${show(d.b)}${d.note ? `   [${d.note}]` : ""}`);
   if (!minor.length) console.log("  (none)");
-  console.log(exit
+  console.log(auth.length
     ? "RESULT: AUTHORIZATION DRIFT — these receipts do not authorize the same thing"
-    : "RESULT: no authorization-surface drift (minor differences do not change what was authorized)");
+    : drift
+      ? "RESULT: SCHEMA DRIFT — these receipts use different schema generations"
+      : "RESULT: no authorization-surface drift (minor differences do not change what was authorized)");
   console.log("scope: reports what changed, not whether either receipt verifies (`seal verify`) or whether the field set is sufficient to authorize the effect");
   return exit;
 }

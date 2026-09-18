@@ -235,3 +235,119 @@ test("valid signed v3 receipts diff; a changed signature fails on either input",
     assert.ok(!out.includes("AUTHORIZATION-SURFACE DRIFT ("));
   }
 });
+
+// These vectors test classification, not seal verification. Recompute all
+// derived release identities with the product's format implementation.
+async function releaseReceipt() {
+  const F = await fmt();
+  const r = allow();
+  delete r.seal_receipt;
+  r.record_type = "seal.authorization-decision";
+  r.record_version = 3;
+  r.release_status = "PENDING";
+  r.operation_id = F.sha256Hex(Buffer.from("receipt-diff operation"));
+  r.release_valid_until = r.now + 60000;
+  const frame = Buffer.from(JSON.stringify({ operation_id: r.operation_id, tool: r.tool, arguments: r.arguments }));
+  r.release_frame = { encoding: "base64", length: frame.length, sha256: F.sha256Hex(frame), base64: frame.toString("base64") };
+  r.post_state_hash = F.postStateHash(r.operation_id, r.release_frame.sha256);
+  r.request_sha256 = F.sha256Hex(Buffer.from(F.canonicalRequest(r.tool, r.arguments)));
+  r.host_identity = {
+    native_executable_sha256: F.sha256Hex(Buffer.from("native executable")),
+    lean_ffi_sha256: F.sha256Hex(Buffer.from("lean ffi")),
+    equivalence: "not_proven",
+  };
+  return r;
+}
+
+for (const field of ["release_status", "operation_id", "release_valid_until", "post_state_hash", "release_frame", "request_sha256", "host_identity"]) {
+  test(`v3 ${field}: changes, additions and removals are AUTH, never MINOR`, async () => {
+    const F = await fmt();
+    const a = await releaseReceipt();
+    const b = structuredClone(a);
+    const otherHash = F.sha256Hex(Buffer.from(`changed ${field}`));
+    if (field === "release_status") b[field] = "RELEASED";
+    else if (field === "release_valid_until") b[field] += 1;
+    else if (field === "release_frame") b[field].base64 = Buffer.from("changed frame").toString("base64");
+    else if (field === "host_identity") b[field].native_executable_sha256 = otherHash;
+    else b[field] = otherHash;
+    const absent = structuredClone(a);
+    delete absent[field];
+    for (const [label, left, right] of [["changed", a, b], ["added", absent, a], ["removed", a, absent]]) {
+      const res = run([write(`${field}-${label}-a.json`, left), write(`${field}-${label}-b.json`, right), "--json"]);
+      assert.equal(res.code, 1, res.out);
+      const j = JSON.parse(res.out);
+      assert.equal(j.result, "AUTHORIZATION DRIFT");
+      assert.deepEqual(j.authorization.map((d) => d.field), [field]);
+      assert.deepEqual(j.minor, []);
+    }
+  });
+}
+
+test("release lifecycle pair: status and recomputed post-state hash are AUTH in text output", async () => {
+  const F = await fmt();
+  const a = await releaseReceipt();
+  const b = { ...a, release_status: "RELEASED", post_state_hash: F.postStateHash(a.operation_id, F.sha256Hex(Buffer.from("other frame"))) };
+  const res = run([write("release-pair-a.json", a), write("release-pair-b.json", b)]);
+  assert.equal(res.code, 1, res.out);
+  assert.match(res.out, /AUTHORIZATION-SURFACE DRIFT \(2\)/);
+  assert.match(res.out, /release_status: "PENDING" -> "RELEASED"/);
+  assert.match(res.out, /post_state_hash:/);
+  assert.match(res.out, /MINOR \(0\)/);
+});
+
+test("schema-only v2/v3 drift: exit 1 with a distinct JSON result in both directions", async () => {
+  const a = await releaseReceipt();
+  const b = { ...a, record_version: 2 };
+  for (const [left, right] of [[a, b], [b, a]]) {
+    const files = [write("schema-only-a.json", left), write("schema-only-b.json", right)];
+    const res = run([...files, "--json"]);
+    assert.equal(res.code, 1, res.out);
+    const j = JSON.parse(res.out);
+    assert.equal(j.exit, 1);
+    assert.equal(j.result, "SCHEMA DRIFT");
+    assert.equal(j.schema_drift.a, `v${left.record_version}`);
+    assert.equal(j.schema_drift.b, `v${right.record_version}`);
+    assert.deepEqual(j.authorization, []);
+    assert.deepEqual(j.minor, [{ field: "record_version", a: left.record_version, b: right.record_version }]);
+    const text = run(files);
+    assert.equal(text.code, 1);
+    assert.match(text.out, /RESULT: SCHEMA DRIFT/);
+    assert.doesNotMatch(text.out, /authorize the same thing/);
+  }
+});
+
+test("record_version representation within v2 is explicit MINOR, with no schema drift", () => {
+  const a = allow();
+  const b = { ...a, record_type: "seal.authorization-decision", record_version: 2 };
+  delete b.seal_receipt;
+  const res = run([write("v2-old-disc.json", a), write("v2-new-disc.json", b), "--json"]);
+  assert.equal(res.code, 0, res.out);
+  const j = JSON.parse(res.out);
+  assert.equal(j.schema_drift, null);
+  assert.deepEqual(j.authorization, []);
+  assert.deepEqual(j.minor.find((d) => d.field === "record_version"), { field: "record_version", b: 2, note: "added" });
+});
+
+test("parse-error wording is explicit MINOR when the raw request identity is unchanged", async () => {
+  const F = await fmt();
+  const a = JSON.parse(fs.readFileSync(FIX("receipt-block.json"), "utf8"));
+  for (const field of ["tool", "arguments", "args_hash", "canonical_request", "canonical_request_sha256"]) delete a[field];
+  a.request_sha256 = F.sha256Hex(Buffer.from("unparseable request"));
+  a.request_parse_error = "cannot parse request";
+  const b = { ...a, request_parse_error: "request parse failed" };
+  const res = run([write("parse-wording-a.json", a), write("parse-wording-b.json", b), "--json"]);
+  assert.equal(res.code, 0, res.out);
+  const j = JSON.parse(res.out);
+  assert.deepEqual(j.authorization, []);
+  assert.deepEqual(j.minor, [{ field: "request_parse_error", a: a.request_parse_error, b: b.request_parse_error }]);
+});
+
+test("unknown producer-local fields still use the MINOR fallback", () => {
+  const a = allow();
+  const b = { ...a, producer_extension: { note: "local detail" } };
+  const res = run([write("unknown-a.json", a), write("unknown-b.json", b), "--json"]);
+  assert.equal(res.code, 0, res.out);
+  const j = JSON.parse(res.out);
+  assert.deepEqual(j.authorization, []);
+  assert.deepEqual(j.minor, [{ field: "producer_extension", b: b.producer_extension, note: "producer-local block" }]);
+});
