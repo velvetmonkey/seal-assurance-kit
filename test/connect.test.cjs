@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { connect, disconnect } = require("../src/connect.cjs");
+const { connect, disconnect, locations } = require("../src/connect.cjs");
 
 function fixture() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-connect-"));
@@ -32,6 +32,64 @@ test("disconnect refuses overlapping user edits", () => {
   connect({ profilePath: profile, cwd: dir, home: dir });
   fs.appendFileSync(path.join(dir, ".mcp.json"), " \n");
   assert.throws(() => disconnect({ cwd: dir, home: dir }), /changed after Seal connected/);
+});
+
+test("connect compares the requested server and definition on both surfaces", () => {
+  for (const desktop of [false, true]) {
+    const { dir, profile } = fixture();
+    const options = { profilePath: profile, cwd: dir, home: dir, desktop };
+    const loc = locations(options);
+    connect(options);
+    const applied = fs.readFileSync(loc.config);
+    const recorded = fs.readFileSync(loc.metadata);
+    const definition = JSON.parse(fs.readFileSync(profile)).mcpServers.sealed;
+    assert.deepEqual(JSON.parse(recorded).server_definition, definition);
+    for (const servers of [
+      { other: definition },
+      { sealed: { ...definition, command: "/different/server" } },
+      { sealed: { ...definition, args: ["--", "/different/server"] } },
+      { sealed: { ...definition, env: { TOKEN: "different" } } },
+    ]) {
+      fs.writeFileSync(profile, JSON.stringify({ mcpServers: servers }));
+      assert.throws(() => connect(options), new RegExp(`requested server ${Object.keys(servers)[0]}.*recorded server sealed.*disconnect first`));
+      assert.deepEqual(fs.readFileSync(loc.config), applied);
+      assert.deepEqual(fs.readFileSync(loc.metadata), recorded);
+    }
+    // JSON member order and profile filename do not change the server definition.
+    const equivalent = path.join(dir, "equivalent.json");
+    fs.writeFileSync(equivalent, JSON.stringify({ mcpServers: { sealed: { args: definition.args, command: definition.command } } }));
+    const result = connect({ ...options, profilePath: equivalent });
+    assert.equal(result.changed, false);
+    assert.equal(result.message, "already connected; no changes");
+    assert.deepEqual(fs.readFileSync(loc.config), applied);
+    assert.deepEqual(fs.readFileSync(loc.metadata), recorded);
+  }
+});
+
+test("legacy metadata without a recorded definition requires disconnect", () => {
+  const { dir, profile } = fixture();
+  const options = { profilePath: profile, cwd: dir, home: dir };
+  const loc = locations(options);
+  connect(options);
+  const metadata = JSON.parse(fs.readFileSync(loc.metadata));
+  delete metadata.server_definition;
+  fs.writeFileSync(loc.metadata, JSON.stringify(metadata));
+  assert.throws(() => connect(options), /requested server sealed.*recorded server sealed.*disconnect first/);
+  disconnect(options);
+  assert.equal(fs.existsSync(loc.config), false);
+});
+
+test("repeated connect and disconnect restores exact prior bytes", () => {
+  const { dir, profile } = fixture();
+  const options = { profilePath: profile, cwd: dir, home: dir };
+  const config = path.join(dir, ".mcp.json");
+  const before = Buffer.from('{ "unrelated": "preserve", "mcpServers": {} }\r\n');
+  fs.writeFileSync(config, before);
+  for (let cycle = 0; cycle < 2; cycle++) {
+    assert.equal(connect(options).changed, true);
+    assert.equal(disconnect(options).changed, true);
+    assert.deepEqual(fs.readFileSync(config), before);
+  }
 });
 
 test("connect rejects unresolved profiles and name collisions", () => {
