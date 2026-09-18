@@ -8,10 +8,25 @@ const { isDeepStrictEqual } = require("node:util");
 
 function sha256(text) { return crypto.createHash("sha256").update(text).digest("hex"); }
 
-function locations({ cwd, home, desktop }) {
+function locations({ cwd, home, desktop, platform = process.platform, env = process.env }) {
   if (desktop) {
-    const dir = path.join(home, "Library", "Application Support", "Claude");
-    return { config: path.join(dir, "claude_desktop_config.json"), metadata: path.join(dir, ".seal-connect.json"), label: "Claude Desktop" };
+    const desktopPath = platform === "win32" ? path.win32 : path.posix;
+    let dir;
+    if (platform === "darwin") {
+      dir = desktopPath.join(home, "Library", "Application Support", "Claude");
+    } else if (platform === "win32") {
+      if (!env.APPDATA || !path.win32.isAbsolute(env.APPDATA)) {
+        const error = new Error("Claude Desktop requires an absolute APPDATA path on Windows");
+        error.name = "ClaudeDesktopPathError";
+        throw error;
+      }
+      dir = desktopPath.join(env.APPDATA, "Claude");
+    } else {
+      const error = new Error(`Claude Desktop config path is not verified for platform: ${platform}`);
+      error.name = "UnsupportedDesktopPlatformError";
+      throw error;
+    }
+    return { config: desktopPath.join(dir, "claude_desktop_config.json"), metadata: desktopPath.join(dir, ".seal-connect.json"), label: "Claude Desktop" };
   }
   return { config: path.join(cwd, ".mcp.json"), metadata: path.join(cwd, ".seal", "connect-claude-code.json"), label: "Claude Code project" };
 }
