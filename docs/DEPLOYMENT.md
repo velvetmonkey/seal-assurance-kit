@@ -8,13 +8,13 @@ rerunnable; nothing depends on trusting this document.
 - **Node.js 22** (the CI-tested version; ≥18 generally works). No npm dependencies — the kit is
   zero-dependency by design; `npm install` is not required.
 - **Access.** The Seal fleet is public; cloning these repositories does not require special evaluator access.
-- For the live demo (optional, recommended): **Docker with `docker compose`**.
 - Nothing else. No API keys, no network calls at verify time: `seal verify` re-derives decisions
   locally against the vendored, hash-pinned kernel.
 
 ## 1. Install
 
 ```sh
+# cwd: wherever you run this — it creates and enters seal-assurance-kit/
 git clone https://github.com/velvetmonkey/seal-assurance-kit
 cd seal-assurance-kit
 node bin/seal --version
@@ -23,6 +23,7 @@ node bin/seal --version
 ## 2. First PASS — verify a known-good receipt
 
 ```sh
+# cwd: seal-assurance-kit/ (from step 1)
 node bin/seal verify fixtures/receipt-block.json
 # ...per-check PASS lines, then:
 # PASS  VERIFIED          → exit 0
@@ -46,6 +47,7 @@ independently (never copy it from the receipt):
 # <your-receipt>.json: a principal-bearing receipt from your own seal-host deployment
 # (none is shipped here — principal receipts carry credential material);
 # SEAL_CONFIG_PUBKEY: your operator config-signing public key, 64 lowercase hex.
+# cwd: seal-assurance-kit/
 node bin/seal verify <your-receipt>.json \
   --expected-config-pubkey "$SEAL_CONFIG_PUBKEY"
 ```
@@ -58,6 +60,7 @@ are not safe to publish; see [../CLAIMS.md](../CLAIMS.md).
 ## 3. First FAIL — prove the tool can say no
 
 ```sh
+# cwd: seal-assurance-kit/
 node bin/seal verify fixtures/receipt-bypass.json
 # FAIL  NOT MEDIATED (bypass receipt)   → exit 1
 node bin/seal scan fixtures/tools.json fixtures/policy-v2.json
@@ -73,6 +76,7 @@ sha256-pinned, downstream-stricter fork of the `seal verify` closure as a ready-
 ## 3b. Compare two receipts
 
 ```sh
+# cwd: seal-assurance-kit/
 node bin/seal receipt-diff fixtures/receipt-allow.json fixtures/receipt-block.json
 # AUTHORIZATION-SURFACE DRIFT (...)   → exit 1: these receipts do not authorize the same thing
 ```
@@ -84,29 +88,16 @@ does not re-verify a seal.
 ## 4. Full suite
 
 ```sh
+# cwd: seal-assurance-kit/
 npm test          # verify + fixture-drift + bypass-expect-fail + format + adequacy
                   # leaves the working tree untouched (CI enforces this)
 ```
 
-## 5. A real receipt, end to end (optional, ~5 minutes)
+Steps 1-4 are the kit's own basic journey: install, a real PASS, a real FAIL,
+a receipt comparison, and the full suite — all against fixtures shipped in
+this repository, no other checkout required.
 
-```sh
-git clone https://github.com/velvetmonkey/seal-live-demo && cd seal-live-demo
-bash scripts/run_local.sh        # real containers; ends "ASSERT OK: <n>/<n>"
-                                 # (the count is computed at run time; 19/19 measured 2026-08-08)
-```
-
-The run leaves receipts in `evidence/receipts.jsonl` (each line's `.receipt`-bearing phases are
-also bundled into `pwa/bundle.json`). Extract one and hand it back to the kit:
-
-```sh
-node bin/seal verify <path-to-extracted-receipt.json>
-```
-
-The same receipt also replays in the browser: serve `seal-live-demo/pwa/` statically and watch
-the wasm kernel re-derive it, or open it in `seal-check`.
-
-## 6. Deploying the boundary itself
+## 5. Deploying the boundary itself
 
 The kit *checks* boundaries; it does not run one. The deployable gateway is
 [`seal-host`](https://github.com/velvetmonkey/seal-host) (public): a Rust MCP host that requires
@@ -114,5 +105,5 @@ a **signed** policy config and an approval channel at startup, and routes every 
 through the proven kernel. Start from `seal-host/README.md` ("Verify in five minutes") and
 `seal-host/docs/ARCHITECTURE.md`. Honest scope for what deployment gets you — and does not —
 is one table away: the family
-[claims matrix](https://github.com/velvetmonkey/seal/blob/main/docs/CLAIMS-MATRIX.md) and
-[What Seal is NOT](WHAT-SEAL-IS-NOT.md).
+[claims matrix](https://github.com/velvetmonkey/seal/blob/main/docs/archive/CLAIMS-MATRIX.md)
+(historical) and [What Seal is NOT](WHAT-SEAL-IS-NOT.md).

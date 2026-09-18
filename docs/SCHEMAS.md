@@ -6,6 +6,110 @@ they ever disagree, the code wins and this file has a bug.
 
 ## 1. Policy (`seal scan <tools> <policy>`)
 
+`seal scan`'s policy argument is a TrustedConfig — the same signed-bundle
+shape `seal policy sign` validates (§1b) and the kernel loads. There is no
+separate, simpler "scan policy" format: `seal scan` runs
+`validateTrustedConfig` on this file before it scans anything, and that
+validator requires `epoch` and `safety` unconditionally. A working example
+needs both, even for scan-only use:
+
+```json
+{
+  "epoch": 1,
+  "safety": {
+    "approval": { "control_file": "/tmp/seal-approvals.ndjson", "ttl_seconds": 120 },
+    "tools": [
+      { "name": "db.query",      "mode": "allow" },
+      { "name": "db.execute",    "mode": "guard", "target": [{ "full_arguments": true }] },
+      { "name": "payments.send", "mode": "guard", "target": [{ "full_arguments": true }] },
+      { "name": "shell.exec",    "mode": "deny" },
+      { "name": "search.docs",   "mode": "allow" }
+    ]
+  }
+}
+```
+
+Run against a tool catalogue naming exactly those five tools (§2), this
+passes: `PASS  0 uncovered, 0 ungated, 2 guarded, 1 denied, 2 read-only`,
+exit 0. `fixtures/policy-v2.json` is the same shape and is exercised by
+`test/scan-v2.test.cjs` and `test/scan-pin.test.cjs` on every kit test run.
+
+- `epoch` — integer ≥ 1. Required at the top level.
+- `safety` — required object; the only kernel section that cannot be turned
+  off. `safety.approval.control_file` is required; `ttl_seconds` and
+  `replay_store` are optional.
+- `safety.tools` — array of rules, each `{ "name", "mode", "match"?,
+  "target"? }`:
+  - `name` — the exact tool name. **There is no prefix-glob support** in this
+    shape (unlike the legacy `rules` format below) — `"search.*"` matches
+    nothing; name each tool.
+  - `mode` — one of `"allow"`, `"guard"` (or `"guarded"`, accepted as a
+    synonym), `"deny"`.
+    - `"deny"`: the tool is flat-denied → bucket DENIED.
+    - `"allow"`: the tool passes. A *mutating* tool with `mode: "allow"` is
+      reported as **WARN allowed but ungated** (explicit allow = accepted
+      risk) — see the correction below: this **does** fail the scan.
+    - `"guard"`/`"guarded"`: the tool is **guarded**; requires a non-empty
+      `target` array (§3 target shape).
+  - `match` — optional; omitted means "always" (unconditional). When present,
+    conditional matches on the call's arguments are also supported (§1b);
+    a no-match case denies.
+- Effect (mutating vs. readonly) for a `safety.tools` policy always comes from
+  MCP annotations or the verb heuristic (§ Effect precedence below); this
+  shape has no per-rule `effect` override field.
+
+**Scan verdict:** exit 0 unless at least one *mutating* tool has **no matching
+rule** (bucket UNCOVERED) — those are listed under `FAIL UNCOVERED effectful
+tools` — **or** at least one mutating tool is allowed but ungated (see below).
+A FAIL on a deliberately incomplete policy (like `fixtures/policy-v2.json`
+against `fixtures/tools.json`) is the tool working, not breaking.
+
+### Allowed-but-ungated mutating tools fail the scan
+
+An allowed, ungated mutating tool is printed under `WARN  allowed but ungated`
+— but that label does not mean the scan passes. Verified directly against the
+real scanner:
+
+A one-tool config where the mutating tool is `mode: "allow"`:
+
+```json
+{
+  "epoch": 1,
+  "safety": {
+    "approval": { "control_file": "/tmp/seal-approvals.ndjson" },
+    "tools": [
+      { "name": "db.execute", "mode": "allow" }
+    ]
+  }
+}
+```
+
+against a catalogue naming only `db.execute` (`destructiveHint: true`) prints
+`WARN  allowed but ungated (mutating, guard=allow) (1): db.execute` and then
+`FAIL  0 uncovered, 1 ungated, 0 guarded, 0 denied, 0 read-only`, **exit 1**.
+
+The same tool with `mode: "guard"` and a `target` instead:
+
+```json
+{
+  "epoch": 1,
+  "safety": {
+    "approval": { "control_file": "/tmp/seal-approvals.ndjson" },
+    "tools": [
+      { "name": "db.execute", "mode": "guard", "target": [{ "full_arguments": true }] }
+    ]
+  }
+}
+```
+
+prints `GUARDED (1): db.execute  [guard]` and
+`PASS  0 uncovered, 0 ungated, 1 guarded, 0 denied, 0 read-only`, **exit 0**.
+
+### Legacy `rules` format (historical)
+
+Before the TrustedConfig/`safety.tools` shape above, `seal scan` accepted a
+simpler top-level `rules` map with no `epoch` or `safety` wrapper:
+
 ```json
 {
   "rules": {
@@ -18,29 +122,28 @@ they ever disagree, the code wins and this file has a bug.
 }
 ```
 
-- `rules` — map from tool name (or trailing-`*` prefix glob) to a rule.
-  An exact name match wins over globs; among globs, the longest prefix wins.
-- `guard` — three behaviours:
-  - `"deny"`: the tool is flat-denied → bucket DENIED.
-  - `"allow"`: the tool passes. A *mutating* tool with `guard: "allow"` is
-    reported as **WARN allowed-ungated** (explicit allow = accepted risk) but
-    does **not** fail the scan.
-  - anything else (`"approval"`, `"quorum:2-of-3"`, any label your boundary
-    understands): the tool is **guarded** — scan only records the label.
-- `effect` — optional `"mutating"` | `"readonly"` override, used when the tool
-  carries no MCP annotations (see precedence below).
-- A `default` key at the top level is accepted but currently **ignored** by the
-  scanner: a mutating tool with no matching rule is always bucketed UNCOVERED.
-
-**Scan verdict:** exit 0 unless at least one *mutating* tool has **no matching
-rule** (bucket UNCOVERED) — those are listed under `FAIL UNCOVERED effectful
-tools`. A FAIL on a deliberately incomplete policy (like the shipped fixtures)
-is the tool working, not breaking.
+**This shape is no longer accepted.** `validateTrustedConfig` runs
+unconditionally before scanning and requires `epoch` and `safety`; a bare
+`rules` document fails closed with `FAIL  TRUSTED CONFIG INVALID` (missing
+`epoch`, missing `safety`, plus an unknown-top-level-key error for `rules`
+itself) before any tool is classified — verified by running this exact
+document against the shipped scanner. `classify()` in `src/scan.cjs` still
+contains the old `policy.rules || {}` fallback code for this shape, but it is
+unreachable: nothing can pass `validateTrustedConfig` and still be a legacy
+document. The mapping for anyone migrating a `rules` map to `safety.tools`:
+`guard: "allow"` → `mode: "allow"`; `guard: "deny"` → `mode: "deny"`;
+any other label (`"approval"`, `"quorum:2-of-3"`, …) → `mode: "guard"` plus a
+`target` (the old label itself, like a quorum threshold, is not preserved —
+current guarded rules do not carry that detail); a trailing-`*` name glob
+must be expanded into one explicit rule per tool name; the `effect` override
+and top-level `default` key both have no `safety.tools` equivalent.
 
 **Effect precedence** (first hit wins):
 1. MCP annotations on the tool: `readOnlyHint: true` → readonly;
    `destructiveHint: true` or `idempotentHint: false` → mutating.
-2. The matched rule's `effect` field.
+2. The matched rule's `effect` field. This step only applies to the legacy
+   `rules` format below; a `safety.tools` rule has no `effect` field, so this
+   step never fires for the current TrustedConfig shape.
 3. Verb heuristic over `name + description` (write/delete/send/… vs
    read/get/list/…).
 4. Unknown → **mutating** (fail-safe: unknown effects must be covered).
@@ -130,5 +233,23 @@ VACUOUS** (refinement holds, nothing was distinguished; exit 0). Otherwise
 sample only — it is not universal adequacy over all traces.
 
 Worked fixtures for all three formats live in [`fixtures/`](../fixtures/):
-`policy.json`, `tools.json`, and the five `adequacy-*.json` samples (pass,
-vacuous, fail, malformed, numeric).
+`policy-v2.json` (the current TrustedConfig shape used by `seal scan`;
+`fixtures/policy.json` is the legacy pre-TrustedConfig shape from the section
+above and now FAILs at the schema gate, as README.md's own "Verify in five
+minutes" section notes), `tools.json`, and the five `adequacy-*.json` samples
+(pass, vacuous, fail, malformed, numeric).
+
+## 4. Receipt number compatibility (`seal verify`, cross-repo)
+
+Not authored by you, but worth knowing before you construct one by hand: the
+Protect v2 receipt format (`velvetmonkey/seal`'s
+[`docs/SEAL-RECEIPT-V2.md`](https://github.com/velvetmonkey/seal/blob/main/docs/SEAL-RECEIPT-V2.md))
+accepts finite decimal numbers in receipt arguments. This kit's `src/verify.cjs`
+(`spineJsonIsCanonical`, `Number.isSafeInteger`) and `velvetmonkey/seal-check`'s
+`protect-receipt.js` (`Number.isInteger` and `Number.isSafeInteger`) both
+currently accept only finite **safe integers** — a decimal, negative
+fraction, or scientific-notation numeric argument that the producer and its
+own checker treat as canonical will be rejected here as non-canonical.
+Integer-only receipts are unaffected. This is a known gap between the
+specification and these two checkers, not a spec ambiguity or a "you
+constructed it wrong" error.
