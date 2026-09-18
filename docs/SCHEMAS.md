@@ -241,15 +241,10 @@ minutes" section notes), `tools.json`, and the five `adequacy-*.json` samples
 
 ## 4. Receipt number compatibility (`seal verify`, cross-repo)
 
-Not authored by you, but worth knowing before you construct one by hand: the
-Protect v2 receipt format (`velvetmonkey/seal`'s
+The Protect v2 receipt format (`velvetmonkey/seal`'s
 [`docs/SEAL-RECEIPT-V2.md`](https://github.com/velvetmonkey/seal/blob/main/docs/SEAL-RECEIPT-V2.md))
 accepts finite decimal numbers in receipt arguments. This kit's `src/verify.cjs`
-(`spineJsonIsCanonical`, `Number.isSafeInteger`) and `velvetmonkey/seal-check`'s
-`protect-receipt.js` (`Number.isInteger` and `Number.isSafeInteger`) both
-currently accept only finite **safe integers** — a decimal, negative
-fraction, or scientific-notation numeric argument that the producer and its
-own checker treat as canonical will be rejected here as non-canonical.
-Integer-only receipts are unaffected. This is a known gap between the
-specification and these two checkers, not a spec ambiguity or a "you
-constructed it wrong" error.
+(`spineJsonIsCanonical`) accepts finite JSON numbers (`Number.isFinite`), including
+decimals, negative fractions, and scientific notation. Non-finite numbers and
+malformed numeric JSON are refused. The `now` field still requires a non-negative
+safe integer. Signature, commitment, and replay checks still apply.
