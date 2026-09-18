@@ -38,8 +38,15 @@ test("connect compares the requested server and definition on both surfaces", ()
   for (const desktop of [false, true]) {
     const { dir, profile } = fixture();
     const options = { profilePath: profile, cwd: dir, home: dir, desktop };
-    const loc = locations(options);
-    connect(options);
+    // Exercise Desktop behavior on its documented macOS layout on every test host.
+    // Inject a module-local process without changing the host process.platform.
+    const sandbox = { exports: {} };
+    require("node:vm").runInNewContext(fs.readFileSync(require.resolve("../src/connect.cjs"), "utf8"), {
+      module: sandbox, require, Buffer, process: { ...process, platform: "darwin" },
+    });
+    const client = desktop ? sandbox.exports : { connect, locations };
+    const loc = client.locations(options);
+    client.connect(options);
     const applied = fs.readFileSync(loc.config);
     const recorded = fs.readFileSync(loc.metadata);
     const definition = JSON.parse(fs.readFileSync(profile)).mcpServers.sealed;
@@ -51,14 +58,14 @@ test("connect compares the requested server and definition on both surfaces", ()
       { sealed: { ...definition, env: { TOKEN: "different" } } },
     ]) {
       fs.writeFileSync(profile, JSON.stringify({ mcpServers: servers }));
-      assert.throws(() => connect(options), new RegExp(`requested server ${Object.keys(servers)[0]}.*recorded server sealed.*disconnect first`));
+      assert.throws(() => client.connect(options), new RegExp(`requested server ${Object.keys(servers)[0]}.*recorded server sealed.*disconnect first`));
       assert.deepEqual(fs.readFileSync(loc.config), applied);
       assert.deepEqual(fs.readFileSync(loc.metadata), recorded);
     }
     // JSON member order and profile filename do not change the server definition.
     const equivalent = path.join(dir, "equivalent.json");
     fs.writeFileSync(equivalent, JSON.stringify({ mcpServers: { sealed: { args: definition.args, command: definition.command } } }));
-    const result = connect({ ...options, profilePath: equivalent });
+    const result = client.connect({ ...options, profilePath: equivalent });
     assert.equal(result.changed, false);
     assert.equal(result.message, "already connected; no changes");
     assert.deepEqual(fs.readFileSync(loc.config), applied);
@@ -135,5 +142,50 @@ test("CLI connect accepts the default and explicit profiles", () => {
     assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, ".mcp.json"))), JSON.parse(fs.readFileSync(profile)));
     disconnect({ cwd: dir, home: dir });
     assert.equal(fs.existsSync(path.join(dir, ".mcp.json")), false);
+  }
+});
+
+
+test("Desktop locations select documented macOS and Windows paths", () => {
+  const options = { cwd: "/project", home: "/home/x", desktop: true, env: { APPDATA: "D:\\Roaming Profile" } };
+  const mac = locations({ ...options, platform: "darwin" });
+  const windows = locations({ ...options, platform: "win32" });
+  assert.deepEqual(mac, {
+    config: "/home/x/Library/Application Support/Claude/claude_desktop_config.json",
+    metadata: "/home/x/Library/Application Support/Claude/.seal-connect.json",
+    label: "Claude Desktop",
+  });
+  assert.deepEqual(windows, {
+    config: "D:\\Roaming Profile\\Claude\\claude_desktop_config.json",
+    metadata: "D:\\Roaming Profile\\Claude\\.seal-connect.json",
+    label: "Claude Desktop",
+  });
+  assert.notEqual(windows.config, mac.config);
+});
+
+test("Desktop locations refuse unverified platforms with a named error", () => {
+  for (const platform of ["linux", "sunos", "", null]) {
+    assert.throws(() => locations({ cwd: "/project", home: "/home/x", desktop: true, platform }), {
+      name: "UnsupportedDesktopPlatformError",
+      message: `Claude Desktop config path is not verified for platform: ${platform}`,
+    });
+  }
+});
+
+test("Windows Desktop locations require absolute APPDATA without a guessed fallback", () => {
+  for (const APPDATA of [undefined, "", "relative", "C:relative"]) {
+    assert.throws(() => locations({ home: "/home/x", desktop: true, platform: "win32", env: { APPDATA } }), {
+      name: "ClaudeDesktopPathError",
+    });
+  }
+});
+
+test("project locations stay independent of platform and APPDATA", () => {
+  for (const platform of ["darwin", "win32", "linux", "sunos"]) {
+    assert.deepEqual(locations({ cwd: "/project", desktop: false, platform, env: {} }), {
+      config: path.join("/project", ".mcp.json"),
+      metadata: path.join("/project", ".seal", "connect-claude-code.json"),
+      label: "Claude Code project",
+    });
   }
 });
