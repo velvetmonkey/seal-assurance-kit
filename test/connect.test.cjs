@@ -138,7 +138,7 @@ test("CLI connect accepts the default and explicit profiles", () => {
   }
 });
 
-for (const name of ["plain", "weird\\that", "weird\\\\that", 'weird\\path"dir', 'quote"dir', "dollar$&dir"]) {
+for (const name of ["plain", "weird\\that", "weird\\\\that", 'weird\\path"dir', 'quote"dir', "dollar$&dir", "cwd/ABS/PATH"]) {
   test(`starter profile preserves literal path bytes: ${JSON.stringify(name)}`, () => {
     for (const desktop of [false, true]) {
       const { dir: parent } = fixture();

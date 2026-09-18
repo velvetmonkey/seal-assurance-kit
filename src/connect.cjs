@@ -44,17 +44,31 @@ function renderStarterProfile(text, cwd) {
     CONFIG_PUBLIC_KEY_HEX: readKey("config.pub") || "CONFIG_PUBLIC_KEY_HEX",
     APPROVAL_PUBLIC_KEY_HEX: readKey("approval.pub") || "APPROVAL_PUBLIC_KEY_HEX",
   };
+  // A token is genuine residue only when templating had no real value to put
+  // in its place, so the substitution step left the placeholder's own literal
+  // text behind. Detecting that here, at the moment each token is resolved,
+  // is what makes this reliable: it depends on whether the SUBSTITUTION
+  // succeeded, never on what the resulting bytes happen to look like. A real
+  // cwd can legitimately contain the substring "/ABS/PATH" (e.g. a directory
+  // literally named .../ABS/PATH); once "/ABS/PATH" resolves to that cwd, the
+  // rendered text containing that substring is correct output, not residue.
+  const unresolved = new Set(Object.keys(replacements).filter((token) => replacements[token] === token));
+  let residue = false;
   const replaceValues = (value) => {
     if (typeof value === "string")
       return value.replace(/\/ABS\/PATH|CONFIG_PUBLIC_KEY_HEX|APPROVAL_PUBLIC_KEY_HEX/g,
-        (token) => replacements[token]);
+        (token) => {
+          if (unresolved.has(token)) residue = true;
+          return replacements[token];
+        });
     if (Array.isArray(value)) return value.map(replaceValues);
     if (value !== null && typeof value === "object") {
       for (const key of Object.keys(value)) value[key] = replaceValues(value[key]);
     }
     return value;
   };
-  return JSON.stringify(replaceValues(profile));
+  const rendered = JSON.stringify(replaceValues(profile));
+  return { text: rendered, residue };
 }
 
 function connect({ profilePath, cwd = process.cwd(), home = os.homedir(), desktop = false }) {
@@ -62,15 +76,17 @@ function connect({ profilePath, cwd = process.cwd(), home = os.homedir(), deskto
   const selectedProfile = profilePath || path.join(cwd, "profiles", "hosts", desktop ? "claude-desktop.json" : "claude-code.json");
   if (!fs.existsSync(selectedProfile))
     throw new Error(`starter profile not found at ${selectedProfile}; run from the seal-host checkout or pass --profile`);
-  const profileText = renderStarterProfile(fs.readFileSync(selectedProfile, "utf8"), cwd);
+  const { text: profileText, residue } = renderStarterProfile(fs.readFileSync(selectedProfile, "utf8"), cwd);
+  // Residue is detected during substitution itself (see renderStarterProfile),
+  // not by pattern-matching the rendered text: a legitimate cwd can contain
+  // the placeholder's literal characters, and rendered text is never scanned
+  // for them here.
+  if (residue) throw new Error("profile still contains path or public-key placeholders");
   const profile = parseObject(profileText, "profile");
   if (!profile.mcpServers || typeof profile.mcpServers !== "object")
     throw new Error("Claude profile must contain mcpServers");
   const names = Object.keys(profile.mcpServers);
   if (names.length !== 1) throw new Error("profile must contain exactly one MCP server");
-  const serializedProfile = JSON.stringify(profile);
-  if (/\/ABS\/PATH|PUBLIC_KEY_HEX/.test(serializedProfile))
-    throw new Error("profile still contains path or public-key placeholders");
 
   if (fs.existsSync(loc.metadata)) {
     const metadata = parseObject(fs.readFileSync(loc.metadata, "utf8"), "Seal connection metadata");
