@@ -470,4 +470,4 @@ function report(checks, receipt, receiptPath, options) {
   return reportOutcome(checks, receipt, receiptPath, options).ok;
 }
 
-module.exports = { verify, verifyDetailed, report, VERIFY_PROFILE, EXIT_CODES };
+module.exports = { verify, verifyDetailed, report, VERIFY_PROFILE, EXIT_CODES, receiptSignatureValid };

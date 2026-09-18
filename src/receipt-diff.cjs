@@ -30,6 +30,7 @@
 // 3 internal error.
 
 const fs = require("fs");
+const { receiptSignatureValid } = require("./verify.cjs");
 const path = require("path");
 
 // Top-level fields that change WHAT IS AUTHORIZED, in report order.
@@ -76,11 +77,9 @@ function loadReceipt(F, file) {
   } catch (e) {
     return { error: `cannot read receipt ${file}: ${e.message}` };
   }
-  const shape = F.validateReceipt(raw);
-  if (shape.version === "v0-check" || (!shape.ok && shape.version === null)) {
-    // Schema-K legacy and unrecognized discriminators are hard rejects; other
-    // validation errors are reported but do not block a diff (the diff is not
-    // a verifier), EXCEPT that integrity below still gates.
+  const shape = F.validateReceipt(raw, { ed25519Verify: receiptSignatureValid });
+  if (!shape.ok) {
+    // Reject hard validation failures before integrity checks and classification.
     return { error: `${file}: ${shape.errors.join("; ")}` };
   }
   return { receipt: raw, version: shape.version, file };
