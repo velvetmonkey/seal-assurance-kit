@@ -235,3 +235,201 @@ test("valid signed v3 receipts diff; a changed signature fails on either input",
     assert.ok(!out.includes("AUTHORIZATION-SURFACE DRIFT ("));
   }
 });
+
+// These vectors test classification, not seal verification. Recompute all
+// derived release identities with the product's format implementation.
+async function signReceipt(r) {
+  const crypto = require("node:crypto");
+  const F = await fmt();
+  const { privateKey, publicKey } = crypto.generateKeyPairSync("ed25519");
+  delete r.signature;
+  r.signature = {
+    domain: F.RECEIPT_SIGNATURE_DOMAIN, algorithm: "Ed25519",
+    public_key: publicKey.export({ format: "der", type: "spki" }).subarray(-32).toString("hex"),
+    encoding: "base64url-nopad",
+    value: crypto.sign(null, Buffer.from(F.receiptSignaturePreimage(r)), privateKey).toString("base64url"),
+  };
+  return r;
+}
+
+async function releaseReceipt() {
+  const F = await fmt();
+  const r = allow();
+  delete r.seal_receipt;
+  r.record_type = "seal.authorization-decision";
+  r.record_version = 3;
+  r.durability_class = "asserted_local_fsync";
+  r.release_status = "PENDING";
+  r.operation_id = F.sha256Hex(Buffer.from("receipt-diff operation"));
+  r.release_valid_until = r.now + 60000;
+  const frame = Buffer.from(JSON.stringify({ operation_id: r.operation_id, tool: r.tool, arguments: r.arguments }));
+  r.release_frame = { encoding: "base64", length: frame.length, sha256: F.sha256Hex(frame), base64: frame.toString("base64") };
+  r.post_state_hash = F.postStateHash(r.operation_id, r.release_frame.sha256);
+  r.request_sha256 = F.sha256Hex(Buffer.from(F.canonicalRequest(r.tool, r.arguments)));
+  r.host_identity = {
+    native_executable_sha256: F.sha256Hex(Buffer.from("native executable")),
+    lean_ffi_sha256: F.sha256Hex(Buffer.from("lean ffi")),
+    equivalence: "not_proven",
+  };
+  return signReceipt(r);
+}
+
+// release_status and release_valid_until are unconditionally / ALLOW-required
+// v3 fields (kernel/receipt-format.js validateV3Extras): a receipt missing
+// either is MALFORMED, not a diffable authorization change, and that path is
+// already covered by "v3 missing release_status: either input fails before
+// classification" above. An added/removed sub-case here would just rebuild
+// that same test under a different field name, so only the value-CHANGED
+// case (which keeps both sides independently valid) is tested for these two.
+for (const field of ["release_status", "release_valid_until"]) {
+  test(`v3 ${field}: a value change is AUTH, never MINOR`, async () => {
+    const a = await releaseReceipt();
+    const b = structuredClone(a);
+    if (field === "release_status") b.release_status = "RELEASED";
+    else b.release_valid_until += 1;
+    await signReceipt(b);
+    const res = run([write(`${field}-changed-a.json`, a), write(`${field}-changed-b.json`, b), "--json"]);
+    assert.equal(res.code, 1, res.out);
+    const j = JSON.parse(res.out);
+    assert.equal(j.result, "AUTHORIZATION DRIFT");
+    assert.deepEqual(j.authorization.map((d) => d.field), [field]);
+    // Re-signing a legitimately-differing v3 receipt necessarily changes
+    // signature.value (Ed25519 covers the whole record); that is the one
+    // expected MINOR entry, never an extra AUTH-surface field.
+    assert.deepEqual(j.minor.map((d) => d.field), ["signature"]);
+  });
+}
+
+// request_sha256 and host_identity are genuinely optional v3 fields (present
+// iff the producer chooses to emit them), so — unlike the release-authority
+// fields above — adding or removing them keeps both sides independently
+// valid, and the original changed/added/removed shape still applies.
+for (const field of ["request_sha256", "host_identity"]) {
+  test(`v3 ${field}: changes, additions and removals are AUTH, never MINOR`, async () => {
+    const F = await fmt();
+    const a = await releaseReceipt();
+    const b = structuredClone(a);
+    const otherHash = F.sha256Hex(Buffer.from(`changed ${field}`));
+    if (field === "host_identity") b[field].native_executable_sha256 = otherHash;
+    else b[field] = otherHash;
+    await signReceipt(b);
+    const absent = structuredClone(a);
+    delete absent[field];
+    await signReceipt(absent);
+    for (const [label, left, right] of [["changed", a, b], ["added", absent, a], ["removed", a, absent]]) {
+      const res = run([write(`${field}-${label}-a.json`, left), write(`${field}-${label}-b.json`, right), "--json"]);
+      assert.equal(res.code, 1, res.out);
+      const j = JSON.parse(res.out);
+      assert.equal(j.result, "AUTHORIZATION DRIFT");
+      assert.deepEqual(j.authorization.map((d) => d.field), [field]);
+      assert.deepEqual(j.minor.map((d) => d.field), ["signature"]);
+    }
+  });
+}
+
+// operation_id, release_frame and post_state_hash form ONE cryptographic hash
+// chain, not three independent fields: release_frame embeds operation_id,
+// and post_state_hash = sha256(operation_id, release_frame.sha256). Changing
+// any one of the three in isolation makes the receipt internally
+// inconsistent, and the malformed-receipt gate (#23) correctly refuses to
+// classify it — that is the gate working, not a bug to route around. A tool
+// that reports drift between two VALID receipts should be exercised with two
+// valid receipts, so this builds a second, genuinely consistent release
+// identity (a new operation_id, a frame that embeds it, and the
+// post_state_hash bound to that frame) and asserts all three surface
+// together as AUTH, rather than isolating one field per test.
+test("v3 coupled release identity: a consistent operation_id/release_frame/post_state_hash change is AUTH on all three, together", async () => {
+  const F = await fmt();
+  const a = await releaseReceipt();
+  const b = structuredClone(a);
+  b.operation_id = F.sha256Hex(Buffer.from("a different operation"));
+  const frame = Buffer.from(JSON.stringify({ operation_id: b.operation_id, tool: b.tool, arguments: b.arguments }));
+  b.release_frame = { encoding: "base64", length: frame.length, sha256: F.sha256Hex(frame), base64: frame.toString("base64") };
+  b.post_state_hash = F.postStateHash(b.operation_id, b.release_frame.sha256);
+  await signReceipt(b);
+  const res = run([write("triad-changed-a.json", a), write("triad-changed-b.json", b), "--json"]);
+  assert.equal(res.code, 1, res.out);
+  const j = JSON.parse(res.out);
+  assert.equal(j.result, "AUTHORIZATION DRIFT");
+  assert.deepEqual(j.authorization.map((d) => d.field), ["operation_id", "post_state_hash", "release_frame"]);
+  assert.deepEqual(j.minor.map((d) => d.field), ["signature"]);
+});
+
+test("release lifecycle pair: status and recomputed post-state hash are AUTH in text output", async () => {
+  const F = await fmt();
+  const a = await releaseReceipt();
+  const b = structuredClone(a);
+  b.release_status = "RELEASED";
+  // post_state_hash is bound to release_frame.sha256 (same hash-chain rule as
+  // the coupled triad above): a release against a genuinely different frame
+  // moves both together, so build a real second frame rather than hand-typing
+  // an unbound post_state_hash, which the gate now correctly rejects.
+  const frame = Buffer.from(JSON.stringify({ operation_id: b.operation_id, tool: b.tool, arguments: { ...b.arguments, note: "different release" } }));
+  b.release_frame = { encoding: "base64", length: frame.length, sha256: F.sha256Hex(frame), base64: frame.toString("base64") };
+  b.post_state_hash = F.postStateHash(b.operation_id, b.release_frame.sha256);
+  await signReceipt(b);
+  const res = run([write("release-pair-a.json", a), write("release-pair-b.json", b)]);
+  assert.equal(res.code, 1, res.out);
+  assert.match(res.out, /AUTHORIZATION-SURFACE DRIFT \(3\)/);
+  assert.match(res.out, /release_status: "PENDING" -> "RELEASED"/);
+  assert.match(res.out, /post_state_hash:/);
+  assert.match(res.out, /release_frame:/);
+  assert.match(res.out, /MINOR \(1\)/);
+});
+
+test("schema-only v2/v3 drift: exit 1 with a distinct JSON result in both directions", async () => {
+  const a = await releaseReceipt();
+  const b = { ...a, record_version: 2 };
+  for (const [left, right] of [[a, b], [b, a]]) {
+    const files = [write("schema-only-a.json", left), write("schema-only-b.json", right)];
+    const res = run([...files, "--json"]);
+    assert.equal(res.code, 1, res.out);
+    const j = JSON.parse(res.out);
+    assert.equal(j.exit, 1);
+    assert.equal(j.result, "SCHEMA DRIFT");
+    assert.equal(j.schema_drift.a, `v${left.record_version}`);
+    assert.equal(j.schema_drift.b, `v${right.record_version}`);
+    assert.deepEqual(j.authorization, []);
+    assert.deepEqual(j.minor, [{ field: "record_version", a: left.record_version, b: right.record_version }]);
+    const text = run(files);
+    assert.equal(text.code, 1);
+    assert.match(text.out, /RESULT: SCHEMA DRIFT/);
+    assert.doesNotMatch(text.out, /authorize the same thing/);
+  }
+});
+
+test("record_version representation within v2 is explicit MINOR, with no schema drift", () => {
+  const a = allow();
+  const b = { ...a, record_type: "seal.authorization-decision", record_version: 2 };
+  delete b.seal_receipt;
+  const res = run([write("v2-old-disc.json", a), write("v2-new-disc.json", b), "--json"]);
+  assert.equal(res.code, 0, res.out);
+  const j = JSON.parse(res.out);
+  assert.equal(j.schema_drift, null);
+  assert.deepEqual(j.authorization, []);
+  assert.deepEqual(j.minor.find((d) => d.field === "record_version"), { field: "record_version", b: 2, note: "added" });
+});
+
+test("parse-error wording is explicit MINOR when the raw request identity is unchanged", async () => {
+  const F = await fmt();
+  const a = JSON.parse(fs.readFileSync(FIX("receipt-block.json"), "utf8"));
+  for (const field of ["tool", "arguments", "args_hash", "canonical_request", "canonical_request_sha256"]) delete a[field];
+  a.request_sha256 = F.sha256Hex(Buffer.from("unparseable request"));
+  a.request_parse_error = "cannot parse request";
+  const b = { ...a, request_parse_error: "request parse failed" };
+  const res = run([write("parse-wording-a.json", a), write("parse-wording-b.json", b), "--json"]);
+  assert.equal(res.code, 0, res.out);
+  const j = JSON.parse(res.out);
+  assert.deepEqual(j.authorization, []);
+  assert.deepEqual(j.minor, [{ field: "request_parse_error", a: a.request_parse_error, b: b.request_parse_error }]);
+});
+
+test("unknown producer-local fields still use the MINOR fallback", () => {
+  const a = allow();
+  const b = { ...a, producer_extension: { note: "local detail" } };
+  const res = run([write("unknown-a.json", a), write("unknown-b.json", b), "--json"]);
+  assert.equal(res.code, 0, res.out);
+  const j = JSON.parse(res.out);
+  assert.deepEqual(j.authorization, []);
+  assert.deepEqual(j.minor, [{ field: "producer_extension", b: b.producer_extension, note: "producer-local block" }]);
+});
