@@ -230,6 +230,11 @@ function applyRecipe(manifest, recipeName) {
   } else if (recipeName === "deploy") {
     const deploy = selectRole(context, "deploy");
     const rollback = selectRole(context, "rollback");
+    if (deploy === rollback) {
+      const error = new Error(`recipe '${recipeName}' roles 'deploy' and 'rollback' both select tool '${deploy}'; the manifest needs a second, distinct guarded tool for this recipe to be meaningful because these roles require distinct operations`);
+      error.name = "RecipeRoleCollisionError";
+      throw error;
+    }
     const deployMapping = context.mappings.find((entry) => entry.role === "deploy");
     const rollbackMapping = context.mappings.find((entry) => entry.role === "rollback");
     markSafetyRole(policy, rollback, "rollback", rollbackMapping.notice);
@@ -242,6 +247,11 @@ function applyRecipe(manifest, recipeName) {
   } else if (recipeName === "token-governor") {
     const token = selectRole(context, "token");
     const payment = selectRole(context, "payment");
+    if (token === payment) {
+      const error = new Error(`recipe '${recipeName}' roles 'token' and 'payment' both select tool '${token}'; the manifest needs a second, distinct guarded tool for this recipe to be meaningful because these roles require distinct operations`);
+      error.name = "RecipeRoleCollisionError";
+      throw error;
+    }
     const tokenMapping = context.mappings.find((entry) => entry.role === "token");
     const paymentMapping = context.mappings.find((entry) => entry.role === "payment");
     markSafetyRole(policy, payment, "payment", paymentMapping.notice);
@@ -251,6 +261,11 @@ function applyRecipe(manifest, recipeName) {
   } else if (recipeName === "mesh") {
     const shared = selectRole(context, "shared");
     const publish = selectRole(context, "publish");
+    if (shared === publish) {
+      const error = new Error(`recipe '${recipeName}' roles 'shared' and 'publish' both select tool '${shared}'; the manifest needs a second, distinct guarded tool for this recipe to be meaningful because these roles require distinct operations`);
+      error.name = "RecipeRoleCollisionError";
+      throw error;
+    }
     const sharedMapping = context.mappings.find((entry) => entry.role === "shared");
     const publishMapping = context.mappings.find((entry) => entry.role === "publish");
     markSafetyRole(policy, publish, "publish", publishMapping.notice);
