@@ -155,3 +155,78 @@ test("TrustedConfig authoring matrix validates sign and scan across all seven ke
     });
   }
 });
+
+test("scan and diff reject malformed manifests before reading the policy", async (t) => {
+  const { scan, diff } = require("../src/scan.cjs");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-manifest-shape-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const valid = path.join(dir, "valid.json");
+  const invalid = path.join(dir, "invalid.json");
+  const missingPolicy = path.join(dir, "missing-policy.json");
+  fs.writeFileSync(valid, "[]");
+  const cases = [
+    ["null root", null, "root must"],
+    ["string root", "tools", "root must"],
+    ["number root", 42, "root must"],
+    ["boolean root", false, "root must"],
+    ["missing tools", {}, "tools must"],
+    ["string tools", { tools: "not-an-array-oops" }, "tools must"],
+    ["object tools", { tools: { weird: true } }, "tools must"],
+    ["number tools", { tools: 1 }, "tools must"],
+    ["null tools", { tools: null }, "tools must"],
+    ["boolean tools", { tools: false }, "tools must"],
+  ];
+  for (const entry of [null, "read_item", 1, false, [], {}, { name: null }, { name: 1 }]) {
+    const tools = [{ name: "read_item" }, entry];
+    cases.push([`bare entry ${JSON.stringify(entry)}`, tools, "tools[1]"]);
+    cases.push([`wrapped entry ${JSON.stringify(entry)}`, { tools }, "tools[1]"]);
+  }
+  for (const [label, document, reason] of cases) {
+    await t.test(label, () => {
+      fs.writeFileSync(invalid, JSON.stringify(document));
+      for (const run of [
+        () => scan(invalid, missingPolicy),
+        () => diff(invalid, valid, missingPolicy),
+        () => diff(valid, invalid, missingPolicy),
+      ]) {
+        assert.throws(run, (error) => {
+          assert.equal(error.name, "ManifestValidationError");
+          assert.ok(error.message.includes(JSON.stringify(invalid)), error.message);
+          assert.ok(error.message.includes(reason), error.message);
+          return true;
+        });
+      }
+    });
+  }
+});
+
+test("scan and diff accept array and envelope manifests with name-only entries", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-manifest-valid-"));
+  try {
+    const cli = path.resolve(__dirname, "../bin/seal");
+    const config = path.join(dir, "policy.json");
+    fs.writeFileSync(config, JSON.stringify({ ...baseConfig(), safety: { ...baseConfig().safety, tools: [{ name: "read", mode: "allow", match: { type: "always" } }] } }));
+    for (const tools of [[], [{ name: "read" }]]) {
+      const bare = path.join(dir, "bare.json");
+      const wrapped = path.join(dir, "wrapped.json");
+      fs.writeFileSync(bare, JSON.stringify(tools));
+      fs.writeFileSync(wrapped, JSON.stringify({ tools }));
+      for (const args of [
+        ["scan", bare, config],
+        ["scan", wrapped, config],
+        ["scan", "diff", bare, wrapped, config],
+        ["scan", "diff", wrapped, bare, config],
+      ]) {
+        const result = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8" });
+        assert.equal(result.status, tools.length ? 0 : (args[1] === "diff" ? 0 : 1),
+          result.stdout + result.stderr);
+        assert.doesNotMatch(result.stderr, /ManifestValidationError/);
+        if (args[1] === "diff") assert.match(result.stdout, /0 new, 0 removed/);
+        else if (tools.length) assert.match(result.stdout, /1 read-only/);
+        else assert.match(result.stdout, /ORPHAN explicit ALLOW/);
+      }
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
