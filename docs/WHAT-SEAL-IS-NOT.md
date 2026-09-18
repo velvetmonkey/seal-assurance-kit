@@ -12,10 +12,39 @@ block wins.
 
 ## The one-line version
 
-Seal proves that a guarded action was **authorized** under a stated policy and
-that the record of it was **not altered after the fact**. It does not prove the
-action was *wise*, *intended*, *legal*, or *safe in the world*. It proves a
-narrow, checkable thing, and it tells you exactly how narrow.
+A green Seal check establishes that a **decision record** is internally
+consistent with a proven decision kernel — re-derivable, unaltered since it
+was signed, and signed by *some* key. It does not, by itself, establish who
+held that key, that the described action actually occurred, or that every
+path to the same effect was enforced. Those are four different things; see
+the breakdown below for what each one actually needs. It does not prove the
+action was *wise*, *intended*, *legal*, or *safe in the world* even when all
+four hold. It proves a narrow, checkable thing, and it tells you exactly how
+narrow.
+
+### Four things that are not one thing
+
+- **A checked decision record.** Re-derivation confirms the record's own
+  contents are self-consistent with the proven decision kernel: this policy,
+  this request, this verdict, matching. This is the part Seal actually proves
+  something about.
+- **A trusted signer.** The record being unaltered since signing says nothing
+  about *who* signed it unless you independently pin the signing key outside
+  the receipt itself. An unpinned check tells you the record is
+  self-consistent, not that your operator produced it.
+- **Actual occurrence.** A verified decision record is evidence that a
+  decision was made and recorded. It is not evidence that the downstream
+  effect actually ran, or ran once, or ran exactly as recorded. Seal's own
+  receipt format names this gap directly: a checked receipt's replay row
+  reads "Verifier-local verdict REPRODUCED" next to "Event occurrence NOT
+  ESTABLISHED" — those are separate rows for a reason.
+- **End-to-end enforcement.** The mediation kernel's decision logic is
+  machine-checked. The deployed Rust, wasm, and JS host paths are shown to
+  agree with it by conformance testing over a corpus, not by a
+  whole-system proof, and they do not cover your network, operating system,
+  or any route to the same effect that never passes through Seal's boundary.
+  A green check speaks to the kernel and the tested paths that call it, not
+  to every way the guarded effect could happen.
 
 ## What Seal does NOT claim
 
@@ -31,9 +60,11 @@ will reach for first, so it is the one to be hardest about. Seal cannot tell you
 *why* an agent tried to move money. It can tell you that the executed call
 matched an approved call byte-for-byte: this amount, this payee, this tool, these
 arguments, this once. That is authorization evidence, not intent evidence. If a
-human approves a malicious-but-valid request, Seal will faithfully execute it and
-faithfully record that it was approved. "Seal verified the transaction" is
-honest. "Seal verified the agent's intent" is not, and we will never print it.
+human approves a malicious-but-valid request, Seal will forward it and
+faithfully record that it was approved — forwarding a decision is not a claim
+that the downstream call then ran (see actual occurrence, above). "Seal
+verified the transaction" is honest. "Seal verified the agent's intent" is
+not, and we will never print it.
 
 **It is not legal liability evidence.** A Seal receipt is audit evidence
 relevant to a liability review. It is not a determination of liability and not
