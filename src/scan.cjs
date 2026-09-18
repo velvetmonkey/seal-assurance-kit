@@ -10,6 +10,7 @@
 // so it drops straight into CI.
 const fs = require("fs");
 const path = require("path");
+const { isDeepStrictEqual } = require("node:util");
 const { formatParticipation, validateTrustedConfig } = require("./trusted-config.cjs");
 
 const MUTATING_VERBS = /\b(write|delete|remove|drop|send|pay|transfer|execute|exec|run|create|insert|update|patch|put|post|issue|revoke|mint|grant|set|modify|destroy|purge|deploy|publish|approve|move|rename)\b/i;
@@ -182,14 +183,25 @@ function scan(toolsPath, policyPath) {
   return !failed;
 }
 
+// Compare full JSON tool records without treating object key order as a change.
+// Missing descriptions and annotations use the same defaults as effectOf().
+function normalizedTool(tool) {
+  return { ...tool, description: tool.description || "", annotations: tool.annotations || {} };
+}
+
 function diff(oldPath, newPath, policyPath) {
-  const oldNames = new Set(toolList(readJson(oldPath), oldPath).map((t) => t.name));
+  const oldTools = toolList(readJson(oldPath), oldPath);
+  const oldByName = new Map(oldTools.map((t) => [t.name, t]));
   const newTools = toolList(readJson(newPath), newPath);
+  const newNames = new Set(newTools.map((t) => t.name));
   const policy = readJson(policyPath);
-  if (!validateAndShowComposition(policy)) return false;
-  const added = newTools.filter((t) => !oldNames.has(t.name));
-  const removed = [...oldNames].filter((n) => !newTools.some((t) => t.name === n));
-  console.log(`seal scan diff  ${oldPath} -> ${newPath}`);
+  console.log("FULL SCAN of new manifest:");
+  const passed = scan(newPath, policyPath);
+  const added = newTools.filter((t) => !oldByName.has(t.name));
+  const removed = [...oldByName.keys()].filter((n) => !newNames.has(n));
+  const changed = newTools.filter((t) => oldByName.has(t.name) &&
+    !isDeepStrictEqual(normalizedTool(oldByName.get(t.name)), normalizedTool(t)));
+  console.log(`\nSECONDARY VIEW: seal scan diff  ${oldPath} -> ${newPath}`);
   if (added.length) {
     console.log(`\nNEW since last scan (${added.length}):`);
     for (const t of added) {
@@ -198,10 +210,19 @@ function diff(oldPath, newPath, policyPath) {
     }
   }
   if (removed.length) console.log(`\nREMOVED (${removed.length}):\n  ${removed.join("\n  ")}`);
+  if (changed.length) {
+    console.log(`\nCHANGED (${changed.length}):`);
+    for (const t of changed) {
+      const before = classify(oldByName.get(t.name), policy);
+      const after = classify(t, policy);
+      console.log(`  ${t.name}  ->  ${before.bucket} -> ${after.bucket}`);
+    }
+  }
   const newUncovered = added.filter((t) => classify(t, policy).bucket === "uncovered");
-  console.log(`\n  ${newUncovered.length ? "FAIL" : "PASS"}  ${added.length} new, ${removed.length} removed, ` +
-    `${newUncovered.length} new-and-uncovered`);
-  return newUncovered.length === 0;
+  console.log(`\n  ${added.length} new, ${removed.length} removed, ${changed.length} changed, ` +
+    `${newUncovered.length} new-and-uncovered (informational)`);
+  console.log(`  ${passed ? "PASS" : "FAIL"}  full scan of new manifest`);
+  return passed;
 }
 
 module.exports = { scan, diff, classify, validateAndShowComposition };
