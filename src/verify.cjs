@@ -111,7 +111,7 @@ function isObject(value) {
 
 function spineJsonIsCanonical(value) {
   if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isSafeInteger(value);
+  if (typeof value === "number") return Number.isFinite(value) && Math.abs(value) <= Number.MAX_SAFE_INTEGER;
   if (Array.isArray(value)) return value.every(spineJsonIsCanonical);
   return isObject(value) && Object.values(value).every(spineJsonIsCanonical);
 }
@@ -167,7 +167,7 @@ function spineV2Errors(receipt, document) {
     errors.push("signature: exactly the members algorithm,value required");
   else if (receipt.signature.algorithm !== "ed25519" || !/^[0-9a-f]{128}$/.test(receipt.signature.value))
     errors.push("signature: ed25519 with a 128-lowercase-hex value required");
-  if (!spineJsonIsCanonical(receipt)) errors.push("receipt: only finite safe-integer JSON values are canonical");
+  if (!spineJsonIsCanonical(receipt)) errors.push("receipt: only finite JSON numbers are canonical");
   if (errors.length === 0) {
     // JSON.stringify is the independently chosen ECMAScript own-property-order
     // serialization.  The validation above admits only values for which that

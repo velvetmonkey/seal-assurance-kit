@@ -126,10 +126,10 @@ function spineWrite(name, receipt, rawMutation = s => s) {
   return file;
 }
 async function spineVerify(file, key = spinePubkey) {
-  const lines = [], original = console.log;
-  console.log = (...args) => lines.push(args.join(" "));
+  const lines = [], original = console.log, originalError = console.error;
+  console.log = console.error = (...args) => lines.push(args.join(" "));
   try { return { ...await verifier.verifyDetailed(file, { receiptPubkey: key }), output: lines.join("\n") }; }
-  finally { console.log = original; }
+  finally { console.log = original; console.error = originalError; }
 }
 
 test("spine-v2: honest decisions and optional approval identity verify", async () => {
@@ -229,4 +229,29 @@ test("spine-v2: signed policies and approval cardinality must match the worker",
   const grantResult = await spineVerify(spineWrite("multiple-approvals", repeated));
   assert.equal(grantResult.exitCode, 1);
   assert.match(grantResult.output, /FAIL  worker approval targets/);
+});
+
+test("spine-v2: signed finite decimal arguments verify; non-finite wire numbers refuse", async () => {
+  for (const value of [1.5, -0.125, 1e-7, 0, 42, Number.MAX_SAFE_INTEGER]) {
+    const receipt = await spineReceipt(false);
+    receipt.arguments = { values: [value] };
+    const result = await decide(receipt.kernel_config, {
+      tool: receipt.tool, args: receipt.arguments, approvals: [], now: receipt.now,
+    });
+    receipt.verdict = result.verdict;
+    receipt.reason = result.receipt.reason;
+    receipt.replay.args_sha256 = hash(receipt.arguments);
+    const file = spineWrite(`finite-${value}`, receipt);
+    const verified = await spineVerify(file);
+    assert.equal(verified.exitCode, 0, verified.output);
+    if (value === 1.5) {
+      for (const token of ["1e9999", "-1e9999", "NaN"]) {
+        const malformed = spineWrite(`nonfinite-${token}`, receipt,
+          text => text.replace('"values":[1.5]', `"values":[${token}]`));
+        const refused = await spineVerify(malformed);
+        assert.equal(refused.exitCode, 1, refused.output);
+        assert.match(refused.output, /only finite JSON numbers|cannot read receipt/);
+      }
+    }
+  }
 });
