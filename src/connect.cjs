@@ -86,8 +86,10 @@ function connect({ profilePath, cwd = process.cwd(), home = os.homedir(), deskto
     applied_sha256: sha256(applied),
     server: name,
   };
-  atomicWrite(loc.config, applied);
+  // Persist rollback bytes before changing the config. If applying fails or the
+  // process stops here, disconnect can recognize and clear the unapplied record.
   atomicWrite(loc.metadata, JSON.stringify(metadata, null, 2) + "\n");
+  atomicWrite(loc.config, applied);
   return { changed: true, ...loc, server: name, message: "connected" };
 }
 
@@ -95,11 +97,18 @@ function disconnect({ cwd = process.cwd(), home = os.homedir(), desktop = false 
   const loc = locations({ cwd, home, desktop });
   if (!fs.existsSync(loc.metadata)) throw new Error(`no Seal connection metadata at ${loc.metadata}`);
   const metadata = parseObject(fs.readFileSync(loc.metadata, "utf8"), "Seal connection metadata");
-  const current = fs.existsSync(loc.config) ? fs.readFileSync(loc.config, "utf8") : "";
-  if (sha256(current) !== metadata.applied_sha256)
-    throw new Error(`refusing rollback: ${loc.config} changed after Seal connected; restore manually using ${loc.metadata}`);
+  const existed = fs.existsSync(loc.config);
+  const current = existed ? fs.readFileSync(loc.config, "utf8") : "";
   const before = Buffer.from(metadata.before_base64, "base64").toString("utf8");
   if (sha256(before) !== metadata.before_sha256) throw new Error("rollback metadata failed its own hash check");
+  // This also covers a completed rollback whose metadata removal failed. Match
+  // existence as well as bytes so an absent file is not confused with an empty one.
+  if (existed === metadata.before_existed && current === before) {
+    fs.rmSync(loc.metadata);
+    return { changed: true, ...loc, server: metadata.server, message: "cleared unapplied or already restored connection; config unchanged" };
+  }
+  if (sha256(current) !== metadata.applied_sha256)
+    throw new Error(`refusing rollback: ${loc.config} changed after Seal connected; restore manually using ${loc.metadata}`);
   if (metadata.before_existed) atomicWrite(loc.config, before);
   else fs.rmSync(loc.config);
   fs.rmSync(loc.metadata);
