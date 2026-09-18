@@ -4,6 +4,8 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
+const { scaffoldReason } = require("./tool-annotations.cjs");
+
 const ALLOW_COMMENT = "unverified suggestion — server self-described readOnly";
 
 function isObject(value) {
@@ -16,14 +18,6 @@ function defaultOutputPath(manifestPath) {
   if (manifestPath.endsWith(".json"))
     return manifestPath.slice(0, -".json".length) + ".policy.json";
   return manifestPath + ".policy.json";
-}
-
-function scaffoldReason(tool) {
-  const annotations = isObject(tool.annotations) ? tool.annotations : {};
-  if (annotations.readOnlyHint === true && annotations.destructiveHint === true) return "conflict";
-  if (annotations.readOnlyHint === true) return "readonly";
-  if (annotations.destructiveHint === true) return "destructive";
-  return "unknown";
 }
 
 function scaffoldManifest(manifest) {
