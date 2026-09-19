@@ -36,6 +36,7 @@
 // ==============================================================================
 const fs = require("fs");
 const path = require("path");
+const { pathToFileURL } = require("node:url");
 
 const KIT_ROOT = path.resolve(__dirname, "..");
 const FLEET_ROOT = process.env.SEAL_FLEET_ROOT
@@ -158,7 +159,7 @@ function buildInput(vector) {
   // --- 2. Load every copy's validateReceipt ---
   const validators = {};
   for (const c of COPIES) {
-    const F = await import("file://" + c.file + "?t=" + c.name.replace(/\W/g, ""));
+    const F = await import(pathToFileURL(c.file).href + "?t=" + c.name.replace(/\W/g, ""));
     if (typeof F.validateReceipt !== "function") {
       check(`${c.name} exports validateReceipt`, false, "missing export");
       continue;

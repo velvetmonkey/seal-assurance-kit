@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const test = require("node:test");
 
 const SPKI_ED25519_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
@@ -20,7 +21,7 @@ function fixture(name) {
 }
 
 async function format() {
-  return import("file://" + path.resolve(__dirname, "../kernel/receipt-format.js"));
+  return import(pathToFileURL(path.resolve(__dirname, "../kernel/receipt-format.js")).href);
 }
 
 // Existing v1 evidence, copied byte-for-byte from seal-check's tracked

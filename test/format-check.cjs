@@ -7,6 +7,7 @@
 //
 // Run:  node test/format-check.cjs   (or npm run test:format)
 const path = require("path");
+const { pathToFileURL } = require("node:url");
 const fs = require("fs");
 
 let failures = 0;
@@ -17,8 +18,8 @@ function check(name, got, want) {
 }
 
 (async () => {
-  const F = await import("file://" + path.resolve(__dirname, "..", "kernel", "receipt-format.js"));
-  const C = await import("file://" + path.resolve(__dirname, "..", "kernel", "seal-config.js"));
+  const F = await import(pathToFileURL(path.resolve(__dirname, "..", "kernel", "receipt-format.js")).href);
+  const C = await import(pathToFileURL(path.resolve(__dirname, "..", "kernel", "seal-config.js")).href);
 
   // --- frozen spec vectors (identical set to seal-check's test) -------------
   check("sha256Hex(\"\")",

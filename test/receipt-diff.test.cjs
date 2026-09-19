@@ -8,6 +8,7 @@ const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
 const ROOT = path.resolve(__dirname, "..");
 const BIN = path.join(ROOT, "bin", "seal");
@@ -29,7 +30,7 @@ function write(name, obj) {
 }
 
 async function fmt() {
-  return import("file://" + path.join(ROOT, "kernel", "receipt-format.js"));
+  return import(pathToFileURL(path.join(ROOT, "kernel", "receipt-format.js")).href);
 }
 
 const allow = () => JSON.parse(fs.readFileSync(FIX("receipt-allow.json"), "utf8"));
