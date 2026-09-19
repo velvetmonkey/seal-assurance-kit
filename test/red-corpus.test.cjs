@@ -26,6 +26,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("fs");
 const path = require("path");
+const { pathToFileURL } = require("node:url");
 
 const ROOT = path.resolve(__dirname, "..");
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(__dirname, "corpus", "red-corpus.json"), "utf8"));
@@ -50,7 +51,7 @@ function buildInput(vector) {
 // The kit's shipped validator — the one bin/seal verify actually uses.
 let validateReceipt;
 test.before(async () => {
-  const F = await import("file://" + path.join(ROOT, "kernel", "receipt-format.js"));
+  const F = await import(pathToFileURL(path.join(ROOT, "kernel", "receipt-format.js")).href);
   validateReceipt = F.validateReceipt;
 });
 

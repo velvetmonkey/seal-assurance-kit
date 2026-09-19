@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const test = require("node:test");
 
 const SPKI_ED25519_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
@@ -16,7 +17,7 @@ function ed25519Verify(message, signature, publicKey) {
 }
 
 async function signedV3Block(domain) {
-  const F = await import("file://" + path.resolve(__dirname, "../kernel/receipt-format.js"));
+  const F = await import(pathToFileURL(path.resolve(__dirname, "../kernel/receipt-format.js")).href);
   domain ||= F.RECEIPT_SIGNATURE_DOMAIN;
   const v2 = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../fixtures/receipt-block.json"), "utf8"));
   delete v2.seal_receipt;
@@ -109,7 +110,7 @@ test("signature key_id is refused and its absence preserves verification", async
 });
 
 test("approval identity key_id rules remain enforced", async () => {
-  const F = await import("file://" + path.resolve(__dirname, "../kernel/receipt-format.js"));
+  const F = await import(pathToFileURL(path.resolve(__dirname, "../kernel/receipt-format.js")).href);
   const allow = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../fixtures/receipt-allow.json"), "utf8"));
   const absentOnEd25519 = structuredClone(allow);
   absentOnEd25519.approval.approval_identity.channel = "ed25519";
