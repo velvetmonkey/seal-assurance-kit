@@ -189,3 +189,64 @@ test("project locations stay independent of platform and APPDATA", () => {
     });
   }
 });
+
+function atomicWriter(fsImpl = fs) {
+  const sandbox = { exports: {} };
+  require("node:vm").runInNewContext(
+    fs.readFileSync(require.resolve("../src/connect.cjs"), "utf8") + "\nmodule.exports = atomicWrite;",
+    { module: sandbox, require: (name) => name === "node:fs" ? fsImpl : require(name), process },
+  );
+  return sandbox.exports;
+}
+
+test("atomic writes bypass a read-only stale PID temporary without changing it", () => {
+  const { dir } = fixture();
+  const file = path.join(dir, "target");
+  const stale = `${file}.seal-tmp-${process.pid}`;
+  fs.writeFileSync(stale, "stale bytes", { mode: 0o400 });
+  try {
+    atomicWriter()(file, "new bytes");
+    assert.equal(fs.readFileSync(file, "utf8"), "new bytes");
+    assert.equal(fs.readFileSync(stale, "utf8"), "stale bytes");
+    assert.deepEqual(fs.readdirSync(dir).sort(), ["profile.json", "target", path.basename(stale)].sort());
+  } finally {
+    fs.chmodSync(stale, 0o600);
+  }
+});
+
+test("atomic writes clean their temporary after a real rename failure", () => {
+  const { dir } = fixture();
+  const file = path.join(dir, "target");
+  fs.mkdirSync(file);
+  fs.writeFileSync(path.join(file, "keep"), "original");
+  assert.throws(() => atomicWriter()(file, "replacement"), { code: "EISDIR" });
+  assert.equal(fs.readFileSync(path.join(file, "keep"), "utf8"), "original");
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["profile.json", "target"]);
+});
+
+test("atomic writes clean a partially written temporary when writing throws", () => {
+  const { dir } = fixture();
+  const file = path.join(dir, "target");
+  fs.writeFileSync(file, "original");
+  const failure = Object.assign(new Error("injected disk full after partial write"), { code: "ENOSPC" });
+  const write = atomicWriter({ ...fs, writeFileSync(temporary, text, options) {
+    fs.writeFileSync(temporary, text.slice(0, 2), options);
+    throw failure;
+  } });
+  assert.throws(() => write(file, "replacement"), (error) => error === failure);
+  assert.equal(fs.readFileSync(file, "utf8"), "original");
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["profile.json", "target"]);
+});
+
+test("rapid same-process atomic writes use distinct temporaries and retain the final bytes", () => {
+  const { dir } = fixture();
+  const names = [];
+  const write = atomicWriter({ ...fs, writeFileSync(temporary, text, options) {
+    names.push(temporary);
+    fs.writeFileSync(temporary, text, options);
+  } });
+  for (let i = 0; i < 20; i++) write(path.join(dir, "target"), String(i));
+  assert.equal(new Set(names).size, 20);
+  assert.equal(fs.readFileSync(path.join(dir, "target"), "utf8"), "19");
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["profile.json", "target"]);
+});

@@ -40,9 +40,13 @@ function parseObject(text, label) {
 
 function atomicWrite(file, text, mode = 0o600) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = `${file}.seal-tmp-${process.pid}`;
-  fs.writeFileSync(temporary, text, { mode });
-  fs.renameSync(temporary, file);
+  const temporary = `${file}.seal-tmp-${process.pid}-${crypto.randomUUID()}`;
+  try {
+    fs.writeFileSync(temporary, text, { mode });
+    fs.renameSync(temporary, file);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
 }
 
 function renderStarterProfile(text, cwd) {
