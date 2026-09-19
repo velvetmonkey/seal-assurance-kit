@@ -32,6 +32,7 @@
 const fs = require("fs");
 const { receiptSignatureValid } = require("./verify.cjs");
 const path = require("path");
+const { pathToFileURL } = require("node:url");
 
 // Top-level fields that change WHAT IS AUTHORIZED, in report order.
 // `arguments` is compared via the derived canonical request line, so argument
@@ -72,7 +73,7 @@ function show(v, max = 96) {
 }
 
 async function loadFormat() {
-  return import("file://" + path.resolve(__dirname, "../kernel/receipt-format.js"));
+  return import(pathToFileURL(path.resolve(__dirname, "../kernel/receipt-format.js")).href);
 }
 
 function loadReceipt(F, file) {
