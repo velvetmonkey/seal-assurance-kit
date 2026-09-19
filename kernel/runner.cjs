@@ -5,6 +5,7 @@
 // The load pattern mirrors seal-check/test/receipt-harness.cjs (proven working).
 const fs = require("fs");
 const path = require("path");
+const { pathToFileURL } = require("node:url");
 const crypto = require("crypto");
 
 const ROOT = path.resolve(__dirname);
@@ -28,8 +29,8 @@ async function load() {
   _M = await globalThis.SealModule({
     locateFile: (p) => path.join(WASM_DIR, p), print() {}, printErr() {},
   });
-  _cfg = await import("file://" + path.join(ROOT, "seal-config.js"));
-  _K = await import("file://" + path.join(ROOT, "kernel.js"));
+  _cfg = await import(pathToFileURL(path.join(ROOT, "seal-config.js")).href);
+  _K = await import(pathToFileURL(path.join(ROOT, "kernel.js")).href);
   return { M: _M, cfg: _cfg, K: _K };
 }
 
