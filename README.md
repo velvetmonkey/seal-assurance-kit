@@ -1,5 +1,8 @@
 # seal-assurance-kit
 
+Full task guides: [Assurance CLI](https://velvetmonkey.github.io/seal/assure/). Start with the hosted guide, then use this repository for source contracts and fixtures.
+
+
 [![CI](https://github.com/velvetmonkey/seal-assurance-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/velvetmonkey/seal-assurance-kit/actions/workflows/ci.yml)
 
 **CLI that tells you the truth about your boundary in one line: PASS, FAIL, or the exact gap.**
