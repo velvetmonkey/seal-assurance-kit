@@ -150,14 +150,14 @@ sufficiency analysis proved necessary.
 | question | tool |
 |---|---|
 | Is this receipt well-formed, canonical, and re-derivable? | `seal verify` (this kit) |
-| Does the field set carry **enough** to justify the claim? | `witness-check` — the sufficiency analyzer (private; see CLAIMS.md) |
+| Does the field set carry **enough** to justify the claim? | [collision-check](https://github.com/velvetmonkey/collision-check) — the sufficiency analyzer (see CLAIMS.md) |
 | What changed between two receipts — does it touch what is **authorized**? | `seal receipt-diff` (this kit) |
 | Gate receipts in CI | Run `node bin/seal verify fixtures/receipt-block.json` (P-REF bundled self-check); replace the fixture path. Spine-v2 needs an independently provisioned `--receipt-pubkey <64-lowercase-hex>`. Unlike the archived action, P-REF does not require `signed_config`. |
 
 The sufficiency and diff checks are local tools today.
 
 One concept, two surfaces: this kit's `seal adequacy` command answers the same **sufficiency**
-question witness-check analyses, over a finite sample at the CLI. Do not read them as two
+question [collision-check](https://github.com/velvetmonkey/collision-check) analyses, over a finite sample at the CLI. Do not read them as two
 different ideas.
 
 `receipt-diff` does **not** re-run the kernel, and a clean diff is not a verification of either

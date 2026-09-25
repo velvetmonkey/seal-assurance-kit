@@ -3,7 +3,7 @@
 // two decision receipts.
 //
 // Third sibling of the family: `seal verify` answers "is this receipt
-// well-formed and re-derivable?"; the (private) sufficiency analyzer answers
+// well-formed and re-derivable?"; the `collision-check` sufficiency analyzer answers
 // "does this field set carry enough to justify the claim?"; receipt-diff
 // answers "what changed between these two receipts, and does the change touch
 // what is AUTHORIZED?".

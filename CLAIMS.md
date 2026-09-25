@@ -73,11 +73,10 @@ verification loudly rather than silently trusting a swapped binary.
   `witness_separation_fails_of_char`.
 - The same refinement question, asked of receipt/approval FIELD SETS ("do these
   fields carry enough information to identify the exact effect?"), is exercised
-  by the private sufficiency analyzer `witness-check` (internal repo,
-  `velvetmonkey/witness-check`): it found the concrete collision proving the
+  by the sufficiency analyzer [collision-check](https://github.com/velvetmonkey/collision-check)
+  (formerly `witness-check`): it found the concrete collision proving the
   pre-v2 approval surface insufficient, and that receipt-schema-v2's
-  `args_hash` closes it. Internal tooling; referenced publicly by capability
-  only.
+  `args_hash` closes it.
 
 ## `seal adequacy` does NOT claim
 
