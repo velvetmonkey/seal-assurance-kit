@@ -6,6 +6,7 @@
 // request hash — everything an independent verifier needs to re-derive the
 // decision without trusting the issuer. No augmentation needed here.
 const path = require("path");
+const { pathToFileURL } = require("node:url");
 const fs = require("fs");
 const { decide } = require("../kernel/runner.cjs");
 
@@ -17,7 +18,7 @@ async function makeReceipt(config, call) {
 }
 
 (async () => {
-  const cfg = await import("file://" + path.resolve(__dirname, "../kernel/seal-config.js"));
+  const cfg = await import(pathToFileURL(path.resolve(__dirname, "../kernel/seal-config.js")).href);
   // Default: the committed fixtures. Pass a directory argument to generate
   // elsewhere (the non-mutating drift test generates into a temp dir).
   const outDir = process.argv[2] ? path.resolve(process.argv[2]) : path.resolve(__dirname, "../fixtures");

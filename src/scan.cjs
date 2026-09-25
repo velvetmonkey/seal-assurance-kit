@@ -10,13 +10,43 @@
 // so it drops straight into CI.
 const fs = require("fs");
 const path = require("path");
+const { isDeepStrictEqual } = require("node:util");
 const { formatParticipation, validateTrustedConfig } = require("./trusted-config.cjs");
+
+const { scaffoldReason } = require("./tool-annotations.cjs");
 
 const MUTATING_VERBS = /\b(write|delete|remove|drop|send|pay|transfer|execute|exec|run|create|insert|update|patch|put|post|issue|revoke|mint|grant|set|modify|destroy|purge|deploy|publish|approve|move|rename)\b/i;
 const READONLY_VERBS = /\b(read|get|list|query|search|fetch|show|view|describe|inspect|status|count)\b/i;
 
 function readJson(p) { return JSON.parse(fs.readFileSync(p, "utf8")); }
-function toolList(doc) { return Array.isArray(doc) ? doc : (doc.tools || []); }
+function toolList(doc, manifestPath) {
+  const invalid = (reason) => {
+    const error = new Error(`Invalid tool manifest ${JSON.stringify(manifestPath)}: ${reason}`);
+    error.name = "ManifestValidationError";
+    throw error;
+  };
+  let tools;
+  if (Array.isArray(doc)) {
+    tools = doc;
+  } else {
+    if (doc === null || typeof doc !== "object") {
+      invalid("root must be an array or an object with a tools array");
+    }
+    if (!Object.prototype.hasOwnProperty.call(doc, "tools") || !Array.isArray(doc.tools)) {
+      invalid("tools must be present and must be an array");
+    }
+    tools = doc.tools;
+  }
+  for (const [index, tool] of tools.entries()) {
+    if (tool === null || typeof tool !== "object" || Array.isArray(tool)) {
+      invalid(`tools[${index}] must be a tool object`);
+    }
+    if (typeof tool.name !== "string") {
+      invalid(`tools[${index}].name must be a string`);
+    }
+  }
+  return tools;
+}
 
 function isV2Policy(policy) {
   return policy && policy.safety && Array.isArray(policy.safety.tools);
@@ -45,8 +75,10 @@ function v2ConditionalModes(name, policy) {
 // mutating | readonly  — annotations win, then policy-declared effect, then heuristic.
 function effectOf(tool, rule) {
   const a = tool.annotations || {};
-  if (a.readOnlyHint === true) return "readonly";
-  if (a.destructiveHint === true || a.idempotentHint === false) return "mutating";
+  const reason = scaffoldReason(tool);
+  if (reason === "readonly") return "readonly";
+  if (reason === "conflict" || reason === "destructive") return "mutating";
+  if (a.idempotentHint === false) return "mutating";
   if (rule && rule.effect) return rule.effect;
   const text = `${tool.name} ${tool.description || ""}`;
   if (MUTATING_VERBS.test(text)) return "mutating";
@@ -108,11 +140,13 @@ function validateAndShowComposition(policy) {
 
 function scan(toolsPath, policyPath) {
   const toolDoc = readJson(toolsPath);
-  const tools = toolList(toolDoc);
+  const tools = toolList(toolDoc, toolsPath);
   const policy = readJson(policyPath);
   if (!validateAndShowComposition(policy)) return false;
   const buckets = { guarded: [], denied: [], "allowed-ungated": [], uncovered: [], readonly: [] };
+  const conflicts = [];
   for (const t of tools) {
+    if (scaffoldReason(t) === "conflict") conflicts.push(t);
     const c = classify(t, policy);
     buckets[c.bucket].push({ name: t.name, guard: c.guard, effect: c.effect });
   }
@@ -128,6 +162,7 @@ function scan(toolsPath, policyPath) {
     for (const x of arr) console.log(`  ${fmt(x)}`);
   };
   console.log(`seal scan  ${toolsPath}  x  ${policyPath}   (${tools.length} tools)`);
+  show("WARN  ANNOTATION CONFLICT (readOnlyHint=true and destructiveHint=true; treated as mutating)", conflicts);
   show("GUARDED", buckets.guarded, (x) => `${x.name}  [${x.guard}]`);
   show("DENIED", buckets.denied);
   show("readonly (informational)", buckets.readonly, (x) => `${x.name}${x.guard ? `  [${x.guard}]` : ""}`);
@@ -155,14 +190,27 @@ function scan(toolsPath, policyPath) {
   return !failed;
 }
 
+// Compare full JSON tool records without treating object key order as a change.
+// Missing descriptions and annotations use the same defaults as effectOf().
+function normalizedTool(tool) {
+  return { ...tool, description: tool.description || "", annotations: tool.annotations || {} };
+}
+
 function diff(oldPath, newPath, policyPath) {
-  const oldNames = new Set(toolList(readJson(oldPath)).map((t) => t.name));
-  const newTools = toolList(readJson(newPath));
+  const oldTools = toolList(readJson(oldPath), oldPath);
+  const oldByName = new Map(oldTools.map((t) => [t.name, t]));
+  const newTools = toolList(readJson(newPath), newPath);
+  const newNames = new Set(newTools.map((t) => t.name));
   const policy = readJson(policyPath);
-  if (!validateAndShowComposition(policy)) return false;
-  const added = newTools.filter((t) => !oldNames.has(t.name));
-  const removed = [...oldNames].filter((n) => !newTools.some((t) => t.name === n));
-  console.log(`seal scan diff  ${oldPath} -> ${newPath}`);
+  console.log("FULL SCAN of new manifest:");
+  const passed = scan(newPath, policyPath);
+  // Invalid policies cannot support the secondary classification view.
+  if (!passed && !validateTrustedConfig(policy).ok) return false;
+  const added = newTools.filter((t) => !oldByName.has(t.name));
+  const removed = [...oldByName.keys()].filter((n) => !newNames.has(n));
+  const changed = newTools.filter((t) => oldByName.has(t.name) &&
+    !isDeepStrictEqual(normalizedTool(oldByName.get(t.name)), normalizedTool(t)));
+  console.log(`\nSECONDARY VIEW: seal scan diff  ${oldPath} -> ${newPath}`);
   if (added.length) {
     console.log(`\nNEW since last scan (${added.length}):`);
     for (const t of added) {
@@ -171,10 +219,19 @@ function diff(oldPath, newPath, policyPath) {
     }
   }
   if (removed.length) console.log(`\nREMOVED (${removed.length}):\n  ${removed.join("\n  ")}`);
+  if (changed.length) {
+    console.log(`\nCHANGED (${changed.length}):`);
+    for (const t of changed) {
+      const before = classify(oldByName.get(t.name), policy);
+      const after = classify(t, policy);
+      console.log(`  ${t.name}  ->  ${before.bucket} -> ${after.bucket}`);
+    }
+  }
   const newUncovered = added.filter((t) => classify(t, policy).bucket === "uncovered");
-  console.log(`\n  ${newUncovered.length ? "FAIL" : "PASS"}  ${added.length} new, ${removed.length} removed, ` +
-    `${newUncovered.length} new-and-uncovered`);
-  return newUncovered.length === 0;
+  console.log(`\n  ${added.length} new, ${removed.length} removed, ${changed.length} changed, ` +
+    `${newUncovered.length} new-and-uncovered (informational)`);
+  console.log(`  ${passed ? "PASS" : "FAIL"}  full scan of new manifest`);
+  return passed;
 }
 
 module.exports = { scan, diff, classify, validateAndShowComposition };

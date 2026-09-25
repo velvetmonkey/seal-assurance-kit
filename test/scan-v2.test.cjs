@@ -155,3 +155,189 @@ test("TrustedConfig authoring matrix validates sign and scan across all seven ke
     });
   }
 });
+
+test("scan and diff reject malformed manifests before reading the policy", async (t) => {
+  const { scan, diff } = require("../src/scan.cjs");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-manifest-shape-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const valid = path.join(dir, "valid.json");
+  const invalid = path.join(dir, "invalid.json");
+  const missingPolicy = path.join(dir, "missing-policy.json");
+  fs.writeFileSync(valid, "[]");
+  const cases = [
+    ["null root", null, "root must"],
+    ["string root", "tools", "root must"],
+    ["number root", 42, "root must"],
+    ["boolean root", false, "root must"],
+    ["missing tools", {}, "tools must"],
+    ["string tools", { tools: "not-an-array-oops" }, "tools must"],
+    ["object tools", { tools: { weird: true } }, "tools must"],
+    ["number tools", { tools: 1 }, "tools must"],
+    ["null tools", { tools: null }, "tools must"],
+    ["boolean tools", { tools: false }, "tools must"],
+  ];
+  for (const entry of [null, "read_item", 1, false, [], {}, { name: null }, { name: 1 }]) {
+    const tools = [{ name: "read_item" }, entry];
+    cases.push([`bare entry ${JSON.stringify(entry)}`, tools, "tools[1]"]);
+    cases.push([`wrapped entry ${JSON.stringify(entry)}`, { tools }, "tools[1]"]);
+  }
+  for (const [label, document, reason] of cases) {
+    await t.test(label, () => {
+      fs.writeFileSync(invalid, JSON.stringify(document));
+      for (const run of [
+        () => scan(invalid, missingPolicy),
+        () => diff(invalid, valid, missingPolicy),
+        () => diff(valid, invalid, missingPolicy),
+      ]) {
+        assert.throws(run, (error) => {
+          assert.equal(error.name, "ManifestValidationError");
+          assert.ok(error.message.includes(JSON.stringify(invalid)), error.message);
+          assert.ok(error.message.includes(reason), error.message);
+          return true;
+        });
+      }
+    });
+  }
+});
+
+test("scan and diff accept array and envelope manifests with name-only entries", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-manifest-valid-"));
+  try {
+    const cli = path.resolve(__dirname, "../bin/seal");
+    const config = path.join(dir, "policy.json");
+    fs.writeFileSync(config, JSON.stringify({ ...baseConfig(), safety: { ...baseConfig().safety, tools: [{ name: "read", mode: "allow", match: { type: "always" } }] } }));
+    for (const tools of [[], [{ name: "read" }]]) {
+      const bare = path.join(dir, "bare.json");
+      const wrapped = path.join(dir, "wrapped.json");
+      fs.writeFileSync(bare, JSON.stringify(tools));
+      fs.writeFileSync(wrapped, JSON.stringify({ tools }));
+      for (const args of [
+        ["scan", bare, config],
+        ["scan", wrapped, config],
+        ["scan", "diff", bare, wrapped, config],
+        ["scan", "diff", wrapped, bare, config],
+      ]) {
+        const result = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8" });
+        // diff now gates its exit on a full scan of the new manifest (that is
+        // this PR's fix), so it must agree with plain `scan` here too — an
+        // orphan ALLOW rule fails both, not just the direct scan.
+        assert.equal(result.status, tools.length ? 0 : 1, result.stdout + result.stderr);
+        assert.doesNotMatch(result.stderr, /ManifestValidationError/);
+        if (args[1] === "diff") assert.match(result.stdout, /0 new, 0 removed/);
+        else if (tools.length) assert.match(result.stdout, /1 read-only/);
+        else assert.match(result.stdout, /ORPHAN explicit ALLOW/);
+      }
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function runDiffCase(t, oldTools, newTools, config) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-scan-diff-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const files = ["old.json", "new.json", "policy.json"].map((name) => path.join(dir, name));
+  [oldTools, newTools, config].forEach((doc, i) => fs.writeFileSync(files[i], JSON.stringify(doc)));
+  const cli = path.resolve(__dirname, "../bin/seal");
+  const diff = spawnSync(process.execPath, [cli, "scan", "diff", ...files], { encoding: "utf8" });
+  const scan = spawnSync(process.execPath, [cli, "scan", files[1], files[2]], { encoding: "utf8" });
+  assert.equal(diff.status, scan.status, diff.stdout + diff.stderr);
+  return diff;
+}
+
+test("diff catches existing uncovered tools and annotation-only reclassification", (t) => {
+  const old = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../fixtures/tools.json")));
+  const config = JSON.parse(fs.readFileSync(path.resolve(__dirname, "../fixtures/policy-v2.json")));
+  const current = structuredClone(old);
+  current.tools.find((tool) => tool.name === "db.query").annotations = { destructiveHint: true };
+  const result = runDiffCase(t, old, current, config);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stdout, /FAIL  UNCOVERED tools \(3\):\s+file.write\s+http.post\s+jira.deleteIssue/);
+  assert.match(result.stdout, /CHANGED \(1\):\s+db.query  ->  readonly -> allowed-ungated/);
+  assert.match(result.stdout, /0 new, 0 removed, 1 changed/);
+  const invalid = runDiffCase(t, [], [{ name: "write_thing" }], null);
+  assert.equal(invalid.status, 1, invalid.stdout + invalid.stderr);
+  assert.match(invalid.stdout, /FAIL  TRUSTED CONFIG INVALID/);
+  assert.doesNotMatch(invalid.stderr, /TypeError|Cannot read/);
+});
+
+test("diff reports changed clean records without failing or treating key order as a change", async (t) => {
+  const tool = { name: "read_item", description: "Read an item", annotations: { readOnlyHint: true },
+    inputSchema: { type: "object", properties: { id: { type: "string" } } } };
+  const cases = [
+    ["description", { ...tool, description: "Read one item" }, true],
+    ["annotations", { ...tool, annotations: { readOnlyHint: true, title: "Read" } }, true],
+    ["schema", { ...tool, inputSchema: { type: "object", properties: { id: { type: "number" } } } }, true],
+    ["key order", { inputSchema: { properties: { id: { type: "string" } }, type: "object" },
+      annotations: tool.annotations, description: tool.description, name: tool.name }, false],
+  ];
+  for (const [name, current, changed] of cases) await t.test(name, (t) => {
+    const result = runDiffCase(t, [tool], [current], baseConfig());
+    assert.equal(result.status, 0, result.stdout);
+    if (changed) assert.match(result.stdout, /CHANGED \(1\):\s+read_item  ->  readonly -> readonly/);
+    else assert.doesNotMatch(result.stdout, /CHANGED/);
+  });
+});
+
+test("diff passes a clean covered addition and keeps the removed view", (t) => {
+  const read = { name: "read_item", annotations: { readOnlyHint: true } };
+  const config = baseConfig();
+  config.safety.tools.push({ name: "write_item", mode: "guarded", match: { type: "always" }, target: [{ full_arguments: true }] });
+  const result = runDiffCase(t, [read, { name: "retired" }], [read, { name: "write_item", annotations: { destructiveHint: true } }], config);
+  assert.equal(result.status, 0, result.stdout);
+  assert.match(result.stdout, /SECONDARY VIEW/);
+  assert.match(result.stdout, /NEW since last scan \(1\):\s+write_item  ->  guarded/);
+  assert.match(result.stdout, /REMOVED \(1\):\s+retired/);
+  assert.match(result.stdout, /PASS  full scan of new manifest/);
+});
+
+for (const [label, annotations, effect] of [
+  ["conflict", { readOnlyHint: true, destructiveHint: true }, "mutating"],
+  ["readonly", { readOnlyHint: true }, "readonly"],
+  ["destructive", { destructiveHint: true }, "mutating"],
+]) {
+  test(`${label} annotations keep their effect across coverage modes and policy versions`, () => {
+    const tool = { name: "read_item", annotations };
+    for (const mode of [null, "allow", "guard", "deny"]) {
+      const legacy = { rules: mode ? { read_item: { guard: mode, effect: "readonly" } } : {} };
+      const v2 = { safety: { tools: mode ? [{ name: tool.name, mode }] : [] } };
+      for (const config of [legacy, v2]) {
+        const result = classify(tool, config);
+        assert.equal(result.effect, effect);
+        const bucket = mode === "guard" ? "guarded" : mode === "deny" ? "denied"
+          : mode === "allow" ? (effect === "mutating" ? "allowed-ungated" : "readonly")
+          : (config === v2 || effect === "mutating" ? "uncovered" : "readonly");
+        assert.equal(result.bucket, bucket);
+      }
+    }
+    assert.equal(classify(tool, policy("allow")).effect, effect);
+  });
+}
+
+test("unknown annotations retain scan-only fallback order", () => {
+  for (const [tool, rules, effect] of [
+    [{ name: "read", annotations: { idempotentHint: false } }, { read: { effect: "readonly" } }, "mutating"],
+    [{ name: "write" }, { write: { effect: "readonly" } }, "readonly"],
+    [{ name: "read write" }, {}, "mutating"],
+    [{ name: "read" }, {}, "readonly"],
+    [{ name: "opaque" }, {}, "mutating"],
+  ]) assert.equal(classify(tool, { rules }).effect, effect);
+});
+
+test("scan names annotation conflicts with missing, allowed, guarded, and denied coverage", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-scan-conflict-"));
+  const manifest = path.join(dir, "manifest.json");
+  const configPath = path.join(dir, "policy.json");
+  fs.writeFileSync(manifest, JSON.stringify({ server: "matrix/server", tools: [
+    { name: "read_item", annotations: { readOnlyHint: true, destructiveHint: true } },
+  ] }));
+  for (const mode of [null, "allow", "guard", "deny"]) {
+    const config = baseConfig();
+    config.safety.tools = mode ? [{ name: "read_item", mode, target: [{ full_arguments: true }] }] : [];
+    fs.writeFileSync(configPath, JSON.stringify(config));
+    const result = spawnSync(process.execPath, [path.resolve(__dirname, "../bin/seal"), "scan", manifest, configPath], { encoding: "utf8" });
+    assert.equal(result.status, mode === "guard" || mode === "deny" ? 0 : 1, result.stdout + result.stderr);
+    assert.match(result.stdout, /WARN  ANNOTATION CONFLICT \(readOnlyHint=true and destructiveHint=true; treated as mutating\) \(1\):\n  read_item/);
+    assert.doesNotMatch(result.stdout, /readonly \(informational\)/);
+  }
+});

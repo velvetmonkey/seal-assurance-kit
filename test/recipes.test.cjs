@@ -7,7 +7,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const { RECIPE_ACTIVE, referencedTools } = require("../src/recipes.cjs");
+const { RECIPE_ACTIVE, referencedTools, applyRecipe, addKernelToPolicy } = require("../src/recipes.cjs");
 const { validateTrustedConfig } = require("../src/trusted-config.cjs");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -46,7 +46,7 @@ function assertGeneratedPolicy(policy, manifest, expected) {
 
 for (const [recipe, expected] of Object.entries(RECIPE_ACTIVE)) {
   for (const filename of MANIFESTS) {
-    test(`${recipe} × ${filename}: non-vacuous, sign-ack/scan agree, K absent`, () => {
+    test(`${recipe} × ${filename}: distinct roles or refusal; sign-ack/scan agree on success`, () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-recipe-"));
       const manifestPath = path.join(MANIFEST_ROOT, filename);
       const policyPath = path.join(dir, "policy.json");
@@ -54,6 +54,15 @@ for (const [recipe, expected] of Object.entries(RECIPE_ACTIVE)) {
       const signedPath = path.join(dir, "trusted.json");
       fs.writeFileSync(keyPath, "07".repeat(32));
 
+      const collision = (filename.startsWith("dbhub") && recipe !== "prod-db") ||
+        (filename.startsWith("filesystem") && recipe === "token-governor");
+      if (collision) {
+        const refused = run(["init", "--recipe", recipe, manifestPath, "--out", policyPath], 1);
+        assert.match(refused, /roles '.*' and '.*' both select tool/);
+        assert.match(refused, /second, distinct guarded tool/);
+        assert.equal(fs.existsSync(policyPath), false, "collision wrote a policy");
+        return;
+      }
       const init = run(["init", "--recipe", recipe, manifestPath, "--out", policyPath]);
       assert.match(init, new RegExp(`recipe ${recipe.replaceAll("-", "\\-")}  ACTIVE`));
       const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
@@ -71,8 +80,6 @@ for (const [recipe, expected] of Object.entries(RECIPE_ACTIVE)) {
 
       for (const line of init.split("\n").filter((entry) => entry.includes("best-fit mapping")))
         assert.match(line, /Review whether this recipe suits this server at all/);
-      if (recipe === "deploy" && filename.startsWith("dbhub"))
-        assert.match(init, /best-fit mapping: role 'deploy' → tool 'execute_sql'.*Review whether this recipe suits this server at all/);
       console.log(`PASS ${recipe} × ${filename}: ACTIVE {${[...expected].sort()}}; no vacuity; K absent`);
     });
   }
@@ -145,4 +152,79 @@ test("init rejects duplicate names before writing and accepts distinct names", (
   fs.writeFileSync(manifest, JSON.stringify({ server: "names", tools }));
   run(["init", manifest, "--out", output]);
   assert.deepEqual(JSON.parse(fs.readFileSync(output)).safety.tools.map((tool) => tool.name), ["same", "different"]);
+});
+
+const DISTINCT_ROLES = [
+  ["deploy", "deploy", "rollback", "Deploy a release", "Rollback a release"],
+  ["token-governor", "token", "payment", "Generate token completion", "Charge a payment"],
+  ["mesh", "shared", "publish", "Merge shared state", "Publish an event"],
+];
+
+for (const [recipe, first, second, firstDescription, secondDescription] of DISTINCT_ROLES) {
+  const tool = (name, description) => ({ name, description, annotations: { destructiveHint: true } });
+  for (const extra of [false, true]) {
+    test(`${recipe} refuses role collision with ${extra ? "an extra generic tool" : "one guarded tool"}`, () => {
+      const tools = [tool("do_thing", "does a thing")];
+      if (extra) tools.push(tool("other_action", "does something else"));
+      assert.throws(() => applyRecipe({ server: "demo@1.0.0", tools }, recipe), (error) => {
+        assert.ok(error instanceof Error);
+        assert.equal(error.name, "RecipeRoleCollisionError");
+        for (const value of [recipe, first, second, "do_thing"])
+          assert.ok(error.message.includes(`'${value}'`), error.message);
+        assert.match(error.message, /second, distinct guarded tool/);
+        assert.match(error.message, /roles require distinct operations/);
+        return true;
+      });
+    });
+  }
+  test(`${recipe} selects distinct tools by their role descriptions`, () => {
+    const manifest = { server: "demo@1.0.0", tools: [
+      tool("action_alpha", firstDescription), tool("action_beta", secondDescription),
+    ] };
+    for (const tools of [manifest.tools, [...manifest.tools].reverse()]) {
+      const result = applyRecipe({ ...manifest, tools }, recipe);
+      assert.deepEqual(result.mappings.map(({ role, tool, bestFit }) => ({ role, tool, bestFit })), [
+        { role: first, tool: "action_alpha", bestFit: false },
+        { role: second, tool: "action_beta", bestFit: false },
+      ]);
+      assertGeneratedPolicy(result.policy, manifest, RECIPE_ACTIVE[recipe]);
+    }
+  });
+}
+
+test("single-role kernels and prod-db still accept one guarded tool", () => {
+  const manifest = { server: "demo@1.0.0", tools: [
+    { name: "do_thing", description: "does a thing", annotations: { destructiveHint: true } },
+  ] };
+  assertGeneratedPolicy(applyRecipe(manifest, "prod-db").policy, manifest, RECIPE_ACTIVE["prod-db"]);
+  const base = addKernelToPolicy({ epoch: 1 }, manifest, "S").policy;
+  for (const symbol of ["C", "L", "V", "K"]) {
+    const result = addKernelToPolicy(base, manifest, symbol, { experimental: true });
+    assert.ok(result.participation.active.some((entry) => entry.symbol === symbol));
+    assert.ok(referencedTools(result.policy).includes("do_thing"));
+  }
+});
+
+test("init preserves annotation reasons and scan agrees on conflict safety", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-init-conflict-"));
+  const manifest = path.join(dir, "manifest.json");
+  const output = path.join(dir, "policy.json");
+  const tools = [
+    { name: "read_conflict", annotations: { readOnlyHint: true, destructiveHint: true } },
+    { name: "read_only", annotations: { readOnlyHint: true } },
+    { name: "read_destructive", annotations: { destructiveHint: true } },
+    { name: "opaque" },
+  ];
+  fs.writeFileSync(manifest, JSON.stringify({ server: "conflict/server", tools }));
+  run(["init", manifest, "--out", output]);
+  const config = JSON.parse(fs.readFileSync(output));
+  assert.deepEqual(config.safety.tools.map(rule => [rule._seal_scaffold.reason, rule.mode, rule._comment]), [
+    ["conflict", "guard", undefined],
+    ["readonly", "allow", "unverified suggestion — server self-described readOnly"],
+    ["destructive", "guard", undefined],
+    ["unknown", "guard", undefined],
+  ]);
+  const { classify } = require("../src/scan.cjs");
+  assert.deepEqual(tools.map(tool => classify(tool, config).effect), ["mutating", "readonly", "mutating", "mutating"]);
+  assert.match(run(["scan", manifest, output]), /ANNOTATION CONFLICT/);
 });

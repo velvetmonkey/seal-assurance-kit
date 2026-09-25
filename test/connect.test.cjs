@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { connect, disconnect, locations } = require("../src/connect.cjs");
+const { connect, disconnect, locations, renderStarterProfile } = require("../src/connect.cjs");
 
 function fixture() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-connect-"));
@@ -38,8 +38,15 @@ test("connect compares the requested server and definition on both surfaces", ()
   for (const desktop of [false, true]) {
     const { dir, profile } = fixture();
     const options = { profilePath: profile, cwd: dir, home: dir, desktop };
-    const loc = locations(options);
-    connect(options);
+    // Exercise Desktop behavior on its documented macOS layout on every test host.
+    // Inject a module-local process without changing the host process.platform.
+    const sandbox = { exports: {} };
+    require("node:vm").runInNewContext(fs.readFileSync(require.resolve("../src/connect.cjs"), "utf8"), {
+      module: sandbox, require, Buffer, process: { ...process, platform: "darwin" },
+    });
+    const client = desktop ? sandbox.exports : { connect, locations };
+    const loc = client.locations(options);
+    client.connect(options);
     const applied = fs.readFileSync(loc.config);
     const recorded = fs.readFileSync(loc.metadata);
     const definition = JSON.parse(fs.readFileSync(profile)).mcpServers.sealed;
@@ -51,14 +58,14 @@ test("connect compares the requested server and definition on both surfaces", ()
       { sealed: { ...definition, env: { TOKEN: "different" } } },
     ]) {
       fs.writeFileSync(profile, JSON.stringify({ mcpServers: servers }));
-      assert.throws(() => connect(options), new RegExp(`requested server ${Object.keys(servers)[0]}.*recorded server sealed.*disconnect first`));
+      assert.throws(() => client.connect(options), new RegExp(`requested server ${Object.keys(servers)[0]}.*recorded server sealed.*disconnect first`));
       assert.deepEqual(fs.readFileSync(loc.config), applied);
       assert.deepEqual(fs.readFileSync(loc.metadata), recorded);
     }
     // JSON member order and profile filename do not change the server definition.
     const equivalent = path.join(dir, "equivalent.json");
     fs.writeFileSync(equivalent, JSON.stringify({ mcpServers: { sealed: { args: definition.args, command: definition.command } } }));
-    const result = connect({ ...options, profilePath: equivalent });
+    const result = client.connect({ ...options, profilePath: equivalent });
     assert.equal(result.changed, false);
     assert.equal(result.message, "already connected; no changes");
     assert.deepEqual(fs.readFileSync(loc.config), applied);
@@ -157,8 +164,13 @@ for (const name of ["plain", "weird\\that", "weird\\\\that", 'weird\\path"dir', 
       fs.writeFileSync(path.join(starters, desktop ? "claude-desktop.json" : "claude-code.json"),
         JSON.stringify({ mcpServers: { sealed: server } }));
       const options = { cwd: dir, home: dir, desktop };
-      assert.doesNotThrow(() => connect(options));
-      const text = fs.readFileSync(locations(options).config, "utf8");
+      const sandbox = { exports: {} };
+      require("node:vm").runInNewContext(fs.readFileSync(require.resolve("../src/connect.cjs"), "utf8"), {
+        module: sandbox, require, Buffer, process: { ...process, platform: "darwin" },
+      });
+      const client = desktop ? sandbox.exports : { connect, disconnect, locations };
+      assert.doesNotThrow(() => client.connect(options));
+      const text = fs.readFileSync(client.locations(options).config, "utf8");
       const expected = { mcpServers: { sealed: {
         command: dir + "/rust/target/debug/seal-host-rs",
         args: [dir, dir + "/data:" + dir + "/cache", "ab".repeat(32), "cd".repeat(32)],
@@ -167,9 +179,146 @@ for (const name of ["plain", "weird\\that", "weird\\\\that", 'weird\\path"dir', 
       } } };
       assert.deepEqual(JSON.parse(text), expected);
       assert.equal(text, JSON.stringify(expected, null, 2) + "\n");
-      assert.equal(connect(options).changed, false);
-      disconnect(options);
-      assert.equal(fs.existsSync(locations(options).config), false);
+      assert.equal(client.connect(options).changed, false);
+      client.disconnect(options);
+      assert.equal(fs.existsSync(client.locations(options).config), false);
     }
   });
 }
+
+
+test("literal /ABS/PATH cwd renders valid JSON with its exact value and key", () => {
+  const source = JSON.stringify({ mcpServers: { sealed: {
+    command: "/ABS/PATH/bin/host", env: { "/ABS/PATH": "/ABS/PATH" },
+  } } });
+  const rendered = renderStarterProfile(source, "/ABS/PATH");
+  assert.equal(rendered.residue, false);
+  const { dir } = fixture();
+  const config = path.join(dir, ".mcp.json");
+  fs.writeFileSync(config, rendered.text);
+  assert.deepEqual(JSON.parse(fs.readFileSync(config, "utf8")), {
+    mcpServers: { sealed: { command: "/ABS/PATH/bin/host", env: { "/ABS/PATH": "/ABS/PATH" } } },
+  });
+});
+
+test("connect resolves nested keys and values and names unresolved placeholders", () => {
+  const { dir, profile } = fixture();
+  fs.mkdirSync(path.join(dir, ".seal"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".seal", "config.pub"), "AB".repeat(32));
+  fs.writeFileSync(path.join(dir, ".seal", "approval.pub"), "CD".repeat(32));
+  fs.writeFileSync(profile, JSON.stringify({ mcpServers: { sealed: {
+    command: "/ABS/PATH/host", env: { "/ABS/PATH": ["/ABS/PATH", { CONFIG_PUBLIC_KEY_HEX: "APPROVAL_PUBLIC_KEY_HEX" }] },
+  } } }));
+  connect({ profilePath: profile, cwd: dir, home: dir });
+  const config = JSON.parse(fs.readFileSync(path.join(dir, ".mcp.json")));
+  assert.deepEqual(config.mcpServers.sealed.env[dir], [dir, { ["ab".repeat(32)]: "cd".repeat(32) }]);
+  disconnect({ cwd: dir, home: dir });
+  fs.writeFileSync(profile, JSON.stringify({ mcpServers: { sealed: { command: "/real/host", env: { UNKNOWN_PUBLIC_KEY_HEX: "ok" } } } }));
+  assert.throws(() => connect({ profilePath: profile, cwd: dir, home: dir }), /placeholders: UNKNOWN_PUBLIC_KEY_HEX/);
+  assert.equal(fs.existsSync(path.join(dir, ".mcp.json")), false);
+});
+
+test("Desktop locations select documented macOS and Windows paths", () => {
+  const options = { cwd: "/project", home: "/home/x", desktop: true, env: { APPDATA: "D:\\Roaming Profile" } };
+  const mac = locations({ ...options, platform: "darwin" });
+  const windows = locations({ ...options, platform: "win32" });
+  assert.deepEqual(mac, {
+    config: "/home/x/Library/Application Support/Claude/claude_desktop_config.json",
+    metadata: "/home/x/Library/Application Support/Claude/.seal-connect.json",
+    label: "Claude Desktop",
+  });
+  assert.deepEqual(windows, {
+    config: "D:\\Roaming Profile\\Claude\\claude_desktop_config.json",
+    metadata: "D:\\Roaming Profile\\Claude\\.seal-connect.json",
+    label: "Claude Desktop",
+  });
+  assert.notEqual(windows.config, mac.config);
+});
+
+test("Desktop locations refuse unverified platforms with a named error", () => {
+  for (const platform of ["linux", "sunos", "", null]) {
+    assert.throws(() => locations({ cwd: "/project", home: "/home/x", desktop: true, platform }), {
+      name: "UnsupportedDesktopPlatformError",
+      message: `Claude Desktop config path is not verified for platform: ${platform}`,
+    });
+  }
+});
+
+test("Windows Desktop locations require absolute APPDATA without a guessed fallback", () => {
+  for (const APPDATA of [undefined, "", "relative", "C:relative"]) {
+    assert.throws(() => locations({ home: "/home/x", desktop: true, platform: "win32", env: { APPDATA } }), {
+      name: "ClaudeDesktopPathError",
+    });
+  }
+});
+
+test("project locations stay independent of platform and APPDATA", () => {
+  for (const platform of ["darwin", "win32", "linux", "sunos"]) {
+    assert.deepEqual(locations({ cwd: "/project", desktop: false, platform, env: {} }), {
+      config: path.join("/project", ".mcp.json"),
+      metadata: path.join("/project", ".seal", "connect-claude-code.json"),
+      label: "Claude Code project",
+    });
+  }
+});
+
+function atomicWriter(fsImpl = fs) {
+  const sandbox = { exports: {} };
+  require("node:vm").runInNewContext(
+    fs.readFileSync(require.resolve("../src/connect.cjs"), "utf8") + "\nmodule.exports = atomicWrite;",
+    { module: sandbox, require: (name) => name === "node:fs" ? fsImpl : require(name), process },
+  );
+  return sandbox.exports;
+}
+
+test("atomic writes bypass a read-only stale PID temporary without changing it", () => {
+  const { dir } = fixture();
+  const file = path.join(dir, "target");
+  const stale = `${file}.seal-tmp-${process.pid}`;
+  fs.writeFileSync(stale, "stale bytes", { mode: 0o400 });
+  try {
+    atomicWriter()(file, "new bytes");
+    assert.equal(fs.readFileSync(file, "utf8"), "new bytes");
+    assert.equal(fs.readFileSync(stale, "utf8"), "stale bytes");
+    assert.deepEqual(fs.readdirSync(dir).sort(), ["profile.json", "target", path.basename(stale)].sort());
+  } finally {
+    fs.chmodSync(stale, 0o600);
+  }
+});
+
+test("atomic writes clean their temporary after a real rename failure", () => {
+  const { dir } = fixture();
+  const file = path.join(dir, "target");
+  fs.mkdirSync(file);
+  fs.writeFileSync(path.join(file, "keep"), "original");
+  assert.throws(() => atomicWriter()(file, "replacement"), { code: "EISDIR" });
+  assert.equal(fs.readFileSync(path.join(file, "keep"), "utf8"), "original");
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["profile.json", "target"]);
+});
+
+test("atomic writes clean a partially written temporary when writing throws", () => {
+  const { dir } = fixture();
+  const file = path.join(dir, "target");
+  fs.writeFileSync(file, "original");
+  const failure = Object.assign(new Error("injected disk full after partial write"), { code: "ENOSPC" });
+  const write = atomicWriter({ ...fs, writeFileSync(temporary, text, options) {
+    fs.writeFileSync(temporary, text.slice(0, 2), options);
+    throw failure;
+  } });
+  assert.throws(() => write(file, "replacement"), (error) => error === failure);
+  assert.equal(fs.readFileSync(file, "utf8"), "original");
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["profile.json", "target"]);
+});
+
+test("rapid same-process atomic writes use distinct temporaries and retain the final bytes", () => {
+  const { dir } = fixture();
+  const names = [];
+  const write = atomicWriter({ ...fs, writeFileSync(temporary, text, options) {
+    names.push(temporary);
+    fs.writeFileSync(temporary, text, options);
+  } });
+  for (let i = 0; i < 20; i++) write(path.join(dir, "target"), String(i));
+  assert.equal(new Set(names).size, 20);
+  assert.equal(fs.readFileSync(path.join(dir, "target"), "utf8"), "19");
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["profile.json", "target"]);
+});

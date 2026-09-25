@@ -1,5 +1,8 @@
 # seal-assurance-kit
 
+Full task guides: [Assurance CLI](https://velvetmonkey.github.io/seal/assure/). Start with the hosted guide, then use this repository for source contracts and fixtures.
+
+
 [![CI](https://github.com/velvetmonkey/seal-assurance-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/velvetmonkey/seal-assurance-kit/actions/workflows/ci.yml)
 
 **CLI that tells you the truth about your boundary in one line: PASS, FAIL, or the exact gap.**
@@ -34,7 +37,16 @@ Or run the one command explicitly:
 node bin/seal verify fixtures/receipt-block.json   # exit 0: PASS VERIFIED
 ```
 
-Prints `PASS VERIFIED` for a good receipt and `FAIL` (exit 1) for an uncovered scan. Visible terminal outcome, rerun-able, boring on purpose.
+Here `node bin/seal` runs this kit's verifier; the installed product also has
+`seal verify` (`seal verify "$DEMO_ALLOW_RECEIPT"` after setting that variable to
+the ALLOW receipt path printed by `seal demo`), which prints
+`Signature and bindings   UNVERIFIED` and `VERIFY    UNVERIFIED` for that same
+demo receipt without a receipt key.
+
+The showcase prints `PASS VERIFIED` for the fixture receipt and `FAIL` for the
+deliberately uncovered scan, then exits 0: its script allows that expected scan
+failure. Run `node bin/seal scan fixtures/tools.json fixtures/policy-v2.json`
+directly when you want the uncovered scan to exit 1.
 
 ![CLI](https://img.shields.io/badge/interface-CLI-black)
 ![Domain](https://img.shields.io/badge/domain-MCP%20mediation-informational)
@@ -53,7 +65,7 @@ You hand the kit an artifact and it gives you a one-line verdict plus the gap:
 
 - **A receipt** → `seal verify` re-derives it from its own bytes. Kit/host receipts check their schema, kernel-binary match, canonical request hash, and verdict; shipped Seal spine-v2 receipts check their signed body commitments, Ed25519 signature against an out-of-band receipt key, and verdict replay. PASS or the exact failing check.
 - **A tool catalogue + policy** → `seal scan` names every mutating tool no approval covers and exits 1, so unguarded surface fails CI instead of shipping.
-- **Two receipts** → `seal receipt-diff` classifies every field change as AUTHORIZATION-SURFACE (loud, exit 1) or MINOR.
+- **Two supported kit/host decision receipts** → `seal receipt-diff` classifies their field changes as AUTHORIZATION-SURFACE (loud, exit 1) or MINOR. It rejects shipped Seal spine-v2 demo receipts with exit 2; use `seal verify --receipt-pubkey` to check those receipts individually.
 - **A label set** → `seal adequacy` checks the evidence actually separates the labels rather than looking like it does.
 
 The [Verify in five minutes](#verify-in-five-minutes) block below runs each of these against shipped fixtures. Nothing here reaches the network or mutates your tree.
@@ -121,14 +133,23 @@ recorded receipt signer key; the spine-v2 signature deliberately contains only
 node bin/seal verify <demo-receipt>.json --receipt-pubkey "$(cat <demo-dir>/receipt-signer.pub)"
 ```
 
-Without a matching pin, otherwise valid principal evidence is `REDUCED SCOPE`
-(exit 4), never `PASS VERIFIED`. Principal receipts carry reusable credential
-material and are not safe to publish; see [CLAIMS.md](CLAIMS.md).
+The demo receipt with action `INPUT_REQUIRED` records that Seal asked the user
+for input; its gate verdict is `BLOCK`, so this kit reports `receipt verdict:
+BLOCK` when verifying it.
+
+For a principal-bearing kit/host receipt, absent or mismatched
+`--expected-config-pubkey` limits otherwise valid principal evidence to
+`REDUCED SCOPE` (exit 4), never `PASS VERIFIED`. That config-signing pin does
+not replace the demo's `--receipt-pubkey`: a spine-v2 demo receipt without its
+receipt-signing key prints `FAIL NOT VERIFIED` and exits 1. Principal receipts
+carry reusable credential material and are not safe to publish; see
+[CLAIMS.md](CLAIMS.md).
 
 ## `seal receipt-diff` — authorization-surface diff
 
-Two receipts can look alike and authorize different effects. `seal receipt-diff A.json B.json`
-computes a field-level diff and classifies every difference:
+Two supported kit/host decision receipts can look alike and authorize different
+effects. `seal receipt-diff A.json B.json` computes a field-level diff and
+classifies every difference in those receipts:
 
 | group | fields | meaning |
 |---|---|---|
@@ -137,8 +158,13 @@ computes a field-level diff and classifies every difference:
 
 Integrity comes first: each receipt's `canonical_request_sha256` (and v2 `args_hash`) is
 re-derived from its **own** (tool, arguments) in stored key order before any diff; a mismatch is
-flagged stale/tampered (exit 2) and nothing is diffed. Accepts v2, v1, and legacy `v0-live`;
-rejects Schema K with the legacy error naming the schema doc. A pre-v2 vs v2 pair gets an
+flagged stale/tampered (exit 2) and nothing is diffed. Accepts kit/host decision
+receipt v3, v2, v1, and grandfathered `v0-live` shapes with the required
+`canonical_request_sha256`, `bypass`, and `kernel_identity` fields; this does
+not include the shipped Seal spine-v2 demo receipts, even though `seal verify`
+accepts them with `--receipt-pubkey`. On those demo receipts, receipt-diff
+reports missing required fields and exits 2 without classifying changes.
+It rejects Schema K with the legacy error naming the schema doc. A pre-v2 vs v2 pair gets an
 explicit callout — "approval surface widened: +args_hash, +approval" — the exact upgrade the
 sufficiency analysis proved necessary.
 
@@ -147,12 +173,14 @@ sufficiency analysis proved necessary.
 | question | tool |
 |---|---|
 | Is this receipt well-formed, canonical, and re-derivable? | `seal verify` (this kit) |
-| Does the field set carry **enough** to justify the claim? | `witness-check` — the sufficiency analyzer (private; see CLAIMS.md) |
+| Does the field set carry **enough** to justify the claim? | [collision-check](https://github.com/velvetmonkey/collision-check) — the sufficiency analyzer (see CLAIMS.md) |
 | What changed between two receipts — does it touch what is **authorized**? | `seal receipt-diff` (this kit) |
-| Gate receipts in CI | `seal-verify-action` — runs `seal verify` in GitHub Actions and fails the build on an unverifiable receipt (the sufficiency and diff checks are local tools today) |
+| Gate receipts in CI (sketch) | In a job that checks out this kit and provisions receipt paths and trust anchors independently, run `node bin/seal verify fixtures/receipt-block.json` as a P-REF bundled self-check, then replace the fixture path with each intended receipt. For spine-v2, pass an independently provisioned `--receipt-pubkey <64-lowercase-hex>`. This repository's CI badge runs tests and claims-drift, not receipt verification. Unlike the archived action, P-REF does not require `signed_config`. |
+
+The sufficiency and diff checks are local tools today.
 
 One concept, two surfaces: this kit's `seal adequacy` command answers the same **sufficiency**
-question witness-check analyses, over a finite sample at the CLI. Do not read them as two
+question [collision-check](https://github.com/velvetmonkey/collision-check) analyses, over a finite sample at the CLI. Do not read them as two
 different ideas.
 
 `receipt-diff` does **not** re-run the kernel, and a clean diff is not a verification of either
@@ -165,7 +193,7 @@ a standalone repo later; the implementation lives in `src/receipt-diff.cjs` eith
 |---|---|
 | 0 | check passed (also help / `--version`) |
 | 1 | check ran and **failed**: NOT VERIFIED, scan FAIL (uncovered tools), NON-CONFORMANT, adequacy collision, receipt-diff authorization drift |
-| 2 | usage error: unknown command, flag, or profile; missing argument |
+| 2 | invocation error (unknown command, flag, or profile; missing argument), or `receipt-diff` input refused as malformed, legacy, or stale/tampered; no diff verdict |
 | 3 | internal error (unexpected exception — not a verdict) |
 | 4 | **REDUCED SCOPE**: valid evidence that is not eligible for `PASS VERIFIED` (including unpinned/wrong-pinned principal authority) |
 

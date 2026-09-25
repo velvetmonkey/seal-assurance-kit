@@ -8,10 +8,25 @@ const { isDeepStrictEqual } = require("node:util");
 
 function sha256(text) { return crypto.createHash("sha256").update(text).digest("hex"); }
 
-function locations({ cwd, home, desktop }) {
+function locations({ cwd, home, desktop, platform = process.platform, env = process.env }) {
   if (desktop) {
-    const dir = path.join(home, "Library", "Application Support", "Claude");
-    return { config: path.join(dir, "claude_desktop_config.json"), metadata: path.join(dir, ".seal-connect.json"), label: "Claude Desktop" };
+    const desktopPath = platform === "win32" ? path.win32 : path.posix;
+    let dir;
+    if (platform === "darwin") {
+      dir = desktopPath.join(home, "Library", "Application Support", "Claude");
+    } else if (platform === "win32") {
+      if (!env.APPDATA || !path.win32.isAbsolute(env.APPDATA)) {
+        const error = new Error("Claude Desktop requires an absolute APPDATA path on Windows");
+        error.name = "ClaudeDesktopPathError";
+        throw error;
+      }
+      dir = desktopPath.join(env.APPDATA, "Claude");
+    } else {
+      const error = new Error(`Claude Desktop config path is not verified for platform: ${platform}`);
+      error.name = "UnsupportedDesktopPlatformError";
+      throw error;
+    }
+    return { config: desktopPath.join(dir, "claude_desktop_config.json"), metadata: desktopPath.join(dir, ".seal-connect.json"), label: "Claude Desktop" };
   }
   return { config: path.join(cwd, ".mcp.json"), metadata: path.join(cwd, ".seal", "connect-claude-code.json"), label: "Claude Code project" };
 }
@@ -25,9 +40,13 @@ function parseObject(text, label) {
 
 function atomicWrite(file, text, mode = 0o600) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = `${file}.seal-tmp-${process.pid}`;
-  fs.writeFileSync(temporary, text, { mode });
-  fs.renameSync(temporary, file);
+  const temporary = `${file}.seal-tmp-${process.pid}-${crypto.randomUUID()}`;
+  try {
+    fs.writeFileSync(temporary, text, { mode });
+    fs.renameSync(temporary, file);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
 }
 
 function renderStarterProfile(text, cwd) {
@@ -41,34 +60,37 @@ function renderStarterProfile(text, cwd) {
   const profile = JSON.parse(text);
   const replacements = {
     "/ABS/PATH": cwd,
-    CONFIG_PUBLIC_KEY_HEX: readKey("config.pub") || "CONFIG_PUBLIC_KEY_HEX",
-    APPROVAL_PUBLIC_KEY_HEX: readKey("approval.pub") || "APPROVAL_PUBLIC_KEY_HEX",
+    SEAL_BIN_PATH: path.join(cwd, "rust", "target", "debug", "seal-host-rs"),
+    CONFIG_PUBLIC_KEY_HEX: readKey("config.pub"),
+    APPROVAL_PUBLIC_KEY_HEX: readKey("approval.pub"),
   };
-  // A token is genuine residue only when templating had no real value to put
-  // in its place, so the substitution step left the placeholder's own literal
-  // text behind. Detecting that here, at the moment each token is resolved,
-  // is what makes this reliable: it depends on whether the SUBSTITUTION
-  // succeeded, never on what the resulting bytes happen to look like. A real
-  // cwd can legitimately contain the substring "/ABS/PATH" (e.g. a directory
-  // literally named .../ABS/PATH); once "/ABS/PATH" resolves to that cwd, the
-  // rendered text containing that substring is correct output, not residue.
-  const unresolved = new Set(Object.keys(replacements).filter((token) => replacements[token] === token));
-  let residue = false;
-  const replaceValues = (value) => {
-    if (typeof value === "string")
-      return value.replace(/\/ABS\/PATH|CONFIG_PUBLIC_KEY_HEX|APPROVAL_PUBLIC_KEY_HEX/g,
-        (token) => {
-          if (unresolved.has(token)) residue = true;
-          return replacements[token];
-        });
-    if (Array.isArray(value)) return value.map(replaceValues);
+  const unresolved = new Set();
+  const substitute = (value) => value.replace(/\/ABS\/PATH|SEAL_BIN_PATH|[A-Z_]*PUBLIC_KEY_HEX/g, (token) => {
+    if (!Object.hasOwn(replacements, token) || !replacements[token]) {
+      unresolved.add(token);
+      return token;
+    }
+    return replacements[token];
+  });
+  const replaceTree = (value) => {
+    if (typeof value === "string") return substitute(value);
+    if (Array.isArray(value)) return value.map(replaceTree);
     if (value !== null && typeof value === "object") {
-      for (const key of Object.keys(value)) value[key] = replaceValues(value[key]);
+      const result = {};
+      for (const [key, child] of Object.entries(value)) {
+        const renderedKey = substitute(key);
+        if (Object.hasOwn(result, renderedKey))
+          throw new Error(`profile placeholder replacement produces duplicate key ${renderedKey}`);
+        Object.defineProperty(result, renderedKey, {
+          value: replaceTree(child), enumerable: true, writable: true, configurable: true,
+        });
+      }
+      return result;
     }
     return value;
   };
-  const rendered = JSON.stringify(replaceValues(profile));
-  return { text: rendered, residue };
+  const rendered = JSON.stringify(replaceTree(profile));
+  return { text: rendered, residue: unresolved.size > 0, unresolved: [...unresolved] };
 }
 
 function connect({ profilePath, cwd = process.cwd(), home = os.homedir(), desktop = false }) {
@@ -76,12 +98,8 @@ function connect({ profilePath, cwd = process.cwd(), home = os.homedir(), deskto
   const selectedProfile = profilePath || path.join(cwd, "profiles", "hosts", desktop ? "claude-desktop.json" : "claude-code.json");
   if (!fs.existsSync(selectedProfile))
     throw new Error(`starter profile not found at ${selectedProfile}; run from the seal-host checkout or pass --profile`);
-  const { text: profileText, residue } = renderStarterProfile(fs.readFileSync(selectedProfile, "utf8"), cwd);
-  // Residue is detected during substitution itself (see renderStarterProfile),
-  // not by pattern-matching the rendered text: a legitimate cwd can contain
-  // the placeholder's literal characters, and rendered text is never scanned
-  // for them here.
-  if (residue) throw new Error("profile still contains path or public-key placeholders");
+  const { text: profileText, residue, unresolved } = renderStarterProfile(fs.readFileSync(selectedProfile, "utf8"), cwd);
+  if (residue) throw new Error(`profile still contains placeholders: ${unresolved.join(", ")}`);
   const profile = parseObject(profileText, "profile");
   if (!profile.mcpServers || typeof profile.mcpServers !== "object")
     throw new Error("Claude profile must contain mcpServers");

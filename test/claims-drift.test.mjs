@@ -44,3 +44,11 @@ test("fatal manifest read first still reports later drift", () => {
     rmSync(UNREADABLE, { recursive: true, force: true });
   }
 });
+
+// CLAIM-COVERAGE: SECURITY.md#private-intake
+test("security reporting names the repository-specific private intake and redaction", () => {
+  const text = readFileSync(resolve(ROOT, "SECURITY.md"), "utf8");
+  assert.match(text, /https:\/\/github\.com\/velvetmonkey\/seal-assurance-kit\/security\/advisories\/new/);
+  assert.match(text, /minimal redacted reproduction/);
+  assert.match(text, /Do not post private receipts, credentials or signing seeds/);
+});

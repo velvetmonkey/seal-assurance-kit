@@ -10,6 +10,7 @@
 // Today it exercises the vendored reference kernel (self-conformance). A future
 // `seal test <server-url>` will drive the same corpus at a live MCP endpoint.
 const path = require("path");
+const { pathToFileURL } = require("node:url");
 const { decide, decideSeq } = require("../kernel/runner.cjs");
 
 async function runCase(c) {
@@ -24,7 +25,7 @@ async function runCase(c) {
 async function test(profile = "L0", corpusOverride = null) {
   const CORPUS =
     corpusOverride ||
-    (await import("file://" + path.resolve(__dirname, "../kernel/corpus.js"))).CORPUS;
+    (await import(pathToFileURL(path.resolve(__dirname, "../kernel/corpus.js")).href)).CORPUS;
   console.log(`seal test  reference-kernel conformance  profile=${profile}  cases=${CORPUS.length}`);
   console.log(`  (self-conformance vs the vendored reference kernel; not a live-endpoint boundary test)`);
   // Fail closed on an empty corpus: a fold over zero traces is vacuously

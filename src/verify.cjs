@@ -12,6 +12,7 @@ const crypto = require("crypto");
 const { isDeepStrictEqual } = require("util");
 const fs = require("fs");
 const path = require("path");
+const { pathToFileURL } = require("node:url");
 
 // Declared verification profile of THIS copy (docs/VERIFY-PROFILES.md):
 // P-REF — the reference-kernel lane. A config-less NON-PRINCIPAL mediated
@@ -243,7 +244,7 @@ async function verifyDetailed(receiptPath, { expectedConfigPubkey, receiptPubkey
     return { ok: false, outcome: "fail", exitCode: EXIT_CODES.FAIL };
   }
   if (isSpineV2(receipt)) return verifySpineV2(receipt, receiptPath, receiptPubkey, receiptDocument);
-  const F = await import("file://" + path.resolve(__dirname, "../kernel/receipt-format.js"));
+  const F = await import(pathToFileURL(path.resolve(__dirname, "../kernel/receipt-format.js")).href);
   const checks = [];
   const add = (name, pass, detail = "") => checks.push({ name, pass, detail });
   const addScope = (name, detail = "") => checks.push({ name, pass: null, detail });
@@ -470,4 +471,4 @@ function report(checks, receipt, receiptPath, options) {
   return reportOutcome(checks, receipt, receiptPath, options).ok;
 }
 
-module.exports = { verify, verifyDetailed, report, VERIFY_PROFILE, EXIT_CODES };
+module.exports = { verify, verifyDetailed, report, VERIFY_PROFILE, EXIT_CODES, receiptSignatureValid };
