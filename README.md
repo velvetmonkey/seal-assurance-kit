@@ -152,7 +152,7 @@ sufficiency analysis proved necessary.
 | Is this receipt well-formed, canonical, and re-derivable? | `seal verify` (this kit) |
 | Does the field set carry **enough** to justify the claim? | `witness-check` — the sufficiency analyzer (private; see CLAIMS.md) |
 | What changed between two receipts — does it touch what is **authorized**? | `seal receipt-diff` (this kit) |
-| Gate receipts in CI | `seal-verify-action` — runs `seal verify` in GitHub Actions and fails the build on an unverifiable receipt (the sufficiency and diff checks are local tools today) |
+| Gate receipts in CI | Run `node bin/seal verify fixtures/receipt-block.json` from this kit in a workflow step, replacing the fixture path with your receipt; an unverifiable receipt exits nonzero (the sufficiency and diff checks are local tools today) |
 
 One concept, two surfaces: this kit's `seal adequacy` command answers the same **sufficiency**
 question witness-check analyses, over a finite sample at the CLI. Do not read them as two
