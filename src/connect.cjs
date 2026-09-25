@@ -57,10 +57,40 @@ function renderStarterProfile(text, cwd) {
     if (!/^[0-9a-fA-F]{64}$/.test(value)) throw new Error(`${file} must contain one 32-byte public key in hex`);
     return value.toLowerCase();
   };
-  return text
-    .replaceAll("/ABS/PATH", cwd)
-    .replaceAll("CONFIG_PUBLIC_KEY_HEX", readKey("config.pub") || "CONFIG_PUBLIC_KEY_HEX")
-    .replaceAll("APPROVAL_PUBLIC_KEY_HEX", readKey("approval.pub") || "APPROVAL_PUBLIC_KEY_HEX");
+  const profile = JSON.parse(text);
+  const replacements = {
+    "/ABS/PATH": cwd,
+    SEAL_BIN_PATH: path.join(cwd, "rust", "target", "debug", "seal-host-rs"),
+    CONFIG_PUBLIC_KEY_HEX: readKey("config.pub"),
+    APPROVAL_PUBLIC_KEY_HEX: readKey("approval.pub"),
+  };
+  const unresolved = new Set();
+  const substitute = (value) => value.replace(/\/ABS\/PATH|SEAL_BIN_PATH|[A-Z_]*PUBLIC_KEY_HEX/g, (token) => {
+    if (!Object.hasOwn(replacements, token) || !replacements[token]) {
+      unresolved.add(token);
+      return token;
+    }
+    return replacements[token];
+  });
+  const replaceTree = (value) => {
+    if (typeof value === "string") return substitute(value);
+    if (Array.isArray(value)) return value.map(replaceTree);
+    if (value !== null && typeof value === "object") {
+      const result = {};
+      for (const [key, child] of Object.entries(value)) {
+        const renderedKey = substitute(key);
+        if (Object.hasOwn(result, renderedKey))
+          throw new Error(`profile placeholder replacement produces duplicate key ${renderedKey}`);
+        Object.defineProperty(result, renderedKey, {
+          value: replaceTree(child), enumerable: true, writable: true, configurable: true,
+        });
+      }
+      return result;
+    }
+    return value;
+  };
+  const rendered = JSON.stringify(replaceTree(profile));
+  return { text: rendered, residue: unresolved.size > 0, unresolved: [...unresolved] };
 }
 
 function connect({ profilePath, cwd = process.cwd(), home = os.homedir(), desktop = false }) {
@@ -68,15 +98,13 @@ function connect({ profilePath, cwd = process.cwd(), home = os.homedir(), deskto
   const selectedProfile = profilePath || path.join(cwd, "profiles", "hosts", desktop ? "claude-desktop.json" : "claude-code.json");
   if (!fs.existsSync(selectedProfile))
     throw new Error(`starter profile not found at ${selectedProfile}; run from the seal-host checkout or pass --profile`);
-  const profileText = renderStarterProfile(fs.readFileSync(selectedProfile, "utf8"), cwd);
+  const { text: profileText, residue, unresolved } = renderStarterProfile(fs.readFileSync(selectedProfile, "utf8"), cwd);
+  if (residue) throw new Error(`profile still contains placeholders: ${unresolved.join(", ")}`);
   const profile = parseObject(profileText, "profile");
   if (!profile.mcpServers || typeof profile.mcpServers !== "object")
     throw new Error("Claude profile must contain mcpServers");
   const names = Object.keys(profile.mcpServers);
   if (names.length !== 1) throw new Error("profile must contain exactly one MCP server");
-  const serializedProfile = JSON.stringify(profile);
-  if (/\/ABS\/PATH|PUBLIC_KEY_HEX/.test(serializedProfile))
-    throw new Error("profile still contains path or public-key placeholders");
 
   if (fs.existsSync(loc.metadata)) {
     const metadata = parseObject(fs.readFileSync(loc.metadata, "utf8"), "Seal connection metadata");

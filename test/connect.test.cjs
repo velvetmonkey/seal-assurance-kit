@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { connect, disconnect, locations } = require("../src/connect.cjs");
+const { connect, disconnect, locations, renderStarterProfile } = require("../src/connect.cjs");
 
 function fixture() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-connect-"));
@@ -145,6 +145,78 @@ test("CLI connect accepts the default and explicit profiles", () => {
   }
 });
 
+for (const name of ["plain", "weird\\that", "weird\\\\that", 'weird\\path"dir', 'quote"dir', "dollar$&dir", "cwd/ABS/PATH"]) {
+  test(`starter profile preserves literal path bytes: ${JSON.stringify(name)}`, () => {
+    for (const desktop of [false, true]) {
+      const { dir: parent } = fixture();
+      const dir = path.join(parent, name);
+      const starters = path.join(dir, "profiles", "hosts");
+      fs.mkdirSync(starters, { recursive: true });
+      fs.mkdirSync(path.join(dir, ".seal"), { recursive: true });
+      fs.writeFileSync(path.join(dir, ".seal", "config.pub"), "AB".repeat(32) + "\n");
+      fs.writeFileSync(path.join(dir, ".seal", "approval.pub"), "CD".repeat(32) + "\n");
+      const server = {
+        command: "/ABS/PATH/rust/target/debug/seal-host-rs",
+        args: ["/ABS/PATH", "/ABS/PATH/data:/ABS/PATH/cache", "CONFIG_PUBLIC_KEY_HEX", "APPROVAL_PUBLIC_KEY_HEX"],
+        env: { ROOT: "/ABS/PATH", KEYS: "CONFIG_PUBLIC_KEY_HEX:APPROVAL_PUBLIC_KEY_HEX" },
+        enabled: true, retries: 3, optional: null,
+      };
+      fs.writeFileSync(path.join(starters, desktop ? "claude-desktop.json" : "claude-code.json"),
+        JSON.stringify({ mcpServers: { sealed: server } }));
+      const options = { cwd: dir, home: dir, desktop };
+      const sandbox = { exports: {} };
+      require("node:vm").runInNewContext(fs.readFileSync(require.resolve("../src/connect.cjs"), "utf8"), {
+        module: sandbox, require, Buffer, process: { ...process, platform: "darwin" },
+      });
+      const client = desktop ? sandbox.exports : { connect, disconnect, locations };
+      assert.doesNotThrow(() => client.connect(options));
+      const text = fs.readFileSync(client.locations(options).config, "utf8");
+      const expected = { mcpServers: { sealed: {
+        command: dir + "/rust/target/debug/seal-host-rs",
+        args: [dir, dir + "/data:" + dir + "/cache", "ab".repeat(32), "cd".repeat(32)],
+        env: { ROOT: dir, KEYS: "ab".repeat(32) + ":" + "cd".repeat(32) },
+        enabled: true, retries: 3, optional: null,
+      } } };
+      assert.deepEqual(JSON.parse(text), expected);
+      assert.equal(text, JSON.stringify(expected, null, 2) + "\n");
+      assert.equal(client.connect(options).changed, false);
+      client.disconnect(options);
+      assert.equal(fs.existsSync(client.locations(options).config), false);
+    }
+  });
+}
+
+
+test("literal /ABS/PATH cwd renders valid JSON with its exact value and key", () => {
+  const source = JSON.stringify({ mcpServers: { sealed: {
+    command: "/ABS/PATH/bin/host", binary: "SEAL_BIN_PATH", env: { "/ABS/PATH": "/ABS/PATH" },
+  } } });
+  const rendered = renderStarterProfile(source, "/ABS/PATH");
+  assert.equal(rendered.residue, false);
+  const { dir } = fixture();
+  const config = path.join(dir, ".mcp.json");
+  fs.writeFileSync(config, rendered.text);
+  assert.deepEqual(JSON.parse(fs.readFileSync(config, "utf8")), {
+    mcpServers: { sealed: { command: "/ABS/PATH/bin/host", binary: "/ABS/PATH/rust/target/debug/seal-host-rs", env: { "/ABS/PATH": "/ABS/PATH" } } },
+  });
+});
+
+test("connect resolves nested keys and values and names unresolved placeholders", () => {
+  const { dir, profile } = fixture();
+  fs.mkdirSync(path.join(dir, ".seal"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".seal", "config.pub"), "AB".repeat(32));
+  fs.writeFileSync(path.join(dir, ".seal", "approval.pub"), "CD".repeat(32));
+  fs.writeFileSync(profile, JSON.stringify({ mcpServers: { sealed: {
+    command: "/ABS/PATH/host", env: { "/ABS/PATH": ["/ABS/PATH", { CONFIG_PUBLIC_KEY_HEX: "APPROVAL_PUBLIC_KEY_HEX" }] },
+  } } }));
+  connect({ profilePath: profile, cwd: dir, home: dir });
+  const config = JSON.parse(fs.readFileSync(path.join(dir, ".mcp.json")));
+  assert.deepEqual(config.mcpServers.sealed.env[dir], [dir, { ["ab".repeat(32)]: "cd".repeat(32) }]);
+  disconnect({ cwd: dir, home: dir });
+  fs.writeFileSync(profile, JSON.stringify({ mcpServers: { sealed: { command: "/real/host", env: { UNKNOWN_PUBLIC_KEY_HEX: "ok" } } } }));
+  assert.throws(() => connect({ profilePath: profile, cwd: dir, home: dir }), /placeholders: UNKNOWN_PUBLIC_KEY_HEX/);
+  assert.equal(fs.existsSync(path.join(dir, ".mcp.json")), false);
+});
 
 test("Desktop locations select documented macOS and Windows paths", () => {
   const options = { cwd: "/project", home: "/home/x", desktop: true, env: { APPDATA: "D:\\Roaming Profile" } };
