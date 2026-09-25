@@ -37,6 +37,12 @@ Or run the one command explicitly:
 node bin/seal verify fixtures/receipt-block.json   # exit 0: PASS VERIFIED
 ```
 
+Here `node bin/seal` runs this kit's verifier; the installed product also has
+`seal verify` (`seal verify "$DEMO_ALLOW_RECEIPT"` after setting that variable to
+the ALLOW receipt path printed by `seal demo`), which prints
+`Signature and bindings   UNVERIFIED` and `VERIFY    UNVERIFIED` for that same
+demo receipt without a receipt key.
+
 The showcase prints `PASS VERIFIED` for the fixture receipt and `FAIL` for the
 deliberately uncovered scan, then exits 0: its script allows that expected scan
 failure. Run `node bin/seal scan fixtures/tools.json fixtures/policy-v2.json`
@@ -126,6 +132,10 @@ recorded receipt signer key; the spine-v2 signature deliberately contains only
 ```bash
 node bin/seal verify <demo-receipt>.json --receipt-pubkey "$(cat <demo-dir>/receipt-signer.pub)"
 ```
+
+The demo receipt with action `INPUT_REQUIRED` records that Seal asked the user
+for input; its gate verdict is `BLOCK`, so this kit reports `receipt verdict:
+BLOCK` when verifying it.
 
 For a principal-bearing kit/host receipt, absent or mismatched
 `--expected-config-pubkey` limits otherwise valid principal evidence to
