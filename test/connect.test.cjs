@@ -189,7 +189,7 @@ for (const name of ["plain", "weird\\that", "weird\\\\that", 'weird\\path"dir', 
 
 test("literal /ABS/PATH cwd renders valid JSON with its exact value and key", () => {
   const source = JSON.stringify({ mcpServers: { sealed: {
-    command: "/ABS/PATH/bin/host", env: { "/ABS/PATH": "/ABS/PATH" },
+    command: "/ABS/PATH/bin/host", binary: "SEAL_BIN_PATH", env: { "/ABS/PATH": "/ABS/PATH" },
   } } });
   const rendered = renderStarterProfile(source, "/ABS/PATH");
   assert.equal(rendered.residue, false);
@@ -197,7 +197,7 @@ test("literal /ABS/PATH cwd renders valid JSON with its exact value and key", ()
   const config = path.join(dir, ".mcp.json");
   fs.writeFileSync(config, rendered.text);
   assert.deepEqual(JSON.parse(fs.readFileSync(config, "utf8")), {
-    mcpServers: { sealed: { command: "/ABS/PATH/bin/host", env: { "/ABS/PATH": "/ABS/PATH" } } },
+    mcpServers: { sealed: { command: "/ABS/PATH/bin/host", binary: "/ABS/PATH/rust/target/debug/seal-host-rs", env: { "/ABS/PATH": "/ABS/PATH" } } },
   });
 });
 
