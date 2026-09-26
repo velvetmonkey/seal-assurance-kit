@@ -76,7 +76,7 @@ function evidenceLine(vector, monitors) {
   return monitors.map((m, i) => `${m}=${displayValue(vector[i])}`).join(", ");
 }
 
-function analyze(doc) {
+function analyze(doc, firstOnly = false) {
   const buckets = new Map();
   for (const s of doc.states) {
     const vector = vectorFor(s, doc.monitors);
@@ -86,8 +86,30 @@ function analyze(doc) {
   }
 
   const collisions = [];
+  let collisionCount = 0;
   for (const bucket of buckets.values()) {
     const states = bucket.states;
+    if (firstOnly) {
+      const counts = new Map();
+      let seen = 0;
+      for (const state of states) {
+        const label = labelOf(state);
+        const same = counts.get(label) || 0;
+        // Sum cross-label pairs, counting each pair at its later state.
+        collisionCount += seen - same;
+        counts.set(label, same + 1);
+        seen++;
+      }
+      // A non-uniform bucket's first pair always starts at state zero.
+      // Preserve bucket insertion order and then ascending j order.
+      if (collisions.length === 0 && counts.size > 1) {
+        const left = states[0];
+        const label = labelOf(left);
+        const right = states.find((state) => labelOf(state) !== label);
+        collisions.push({ left, right, vector: bucket.vector });
+      }
+      continue;
+    }
     for (let i = 0; i < states.length; i++) {
       for (let j = i + 1; j < states.length; j++) {
         if (labelOf(states[i]) !== labelOf(states[j])) {
@@ -98,6 +120,7 @@ function analyze(doc) {
   }
 
   const labels = new Set(doc.states.map((s) => labelOf(s)));
+  if (firstOnly) return { buckets, collisions, labels, collisionCount };
   return { buckets, collisions, labels };
 }
 
@@ -146,14 +169,14 @@ function printCollision(pair, monitors) {
 }
 
 function report(mode, labelsPath, doc, firstOnly = false) {
-  const result = analyze(doc);
+  const result = analyze(doc, firstOnly);
+  const collisionCount = firstOnly ? result.collisionCount : result.collisions.length;
   printPrelude(mode, labelsPath, doc);
 
-  if (result.collisions.length) {
+  if (collisionCount) {
     console.log("  FAIL  monitor evidence does not refine labels over the observed finite sample");
-    const shown = firstOnly ? result.collisions.slice(0, 1) : result.collisions;
-    for (const pair of shown) printCollision(pair, doc.monitors);
-    console.log(`  FAIL  ${result.collisions.length} collision(s); no monitor-based policy over these monitors can be correct on this sample`);
+    for (const pair of result.collisions) printCollision(pair, doc.monitors);
+    console.log(`  FAIL  ${collisionCount} collision(s); no monitor-based policy over these monitors can be correct on this sample`);
     return false;
   }
 
