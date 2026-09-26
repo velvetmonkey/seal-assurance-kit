@@ -42,14 +42,44 @@ function commitExclusive(temporary, file) {
   }
 }
 
+// Follow a chain of symbolic links to the final target path. A dangling link
+// (and a chain that ends in one) resolves to the missing path so --force can
+// create the target through the link. Exclusive create (force: false) does
+// not call this: a symlink inode at the destination name is already EEXIST.
+// Remaining race: a link retargeted between this resolve and the later
+// rename/link commits onto the old target; the new target is untouched.
+function resolveFinalTarget(file) {
+  let current = path.resolve(file);
+  const seen = new Set();
+  for (;;) {
+    if (seen.has(current)) {
+      const error = new Error(`ELOOP: too many symbolic links, resolve '${file}'`);
+      error.code = "ELOOP";
+      throw error;
+    }
+    seen.add(current);
+    let st;
+    try {
+      st = fs.lstatSync(current);
+    } catch (error) {
+      if (error.code === "ENOENT") return current;
+      throw error;
+    }
+    if (!st.isSymbolicLink()) return current;
+    current = path.resolve(path.dirname(current), fs.readlinkSync(current));
+  }
+}
+
 function atomicWrite(file, text, modeOrOptions) {
   const { mode, force } = optionsFrom(modeOrOptions);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = `${file}.seal-tmp-${process.pid}-${crypto.randomUUID()}`;
+  const dest = path.resolve(file);
+  const commitPath = force ? resolveFinalTarget(dest) : dest;
+  fs.mkdirSync(path.dirname(commitPath), { recursive: true });
+  const temporary = `${commitPath}.seal-tmp-${process.pid}-${crypto.randomUUID()}`;
   try {
     fs.writeFileSync(temporary, text, { mode });
-    if (force) fs.renameSync(temporary, file);
-    else commitExclusive(temporary, file);
+    if (force) fs.renameSync(temporary, commitPath);
+    else commitExclusive(temporary, commitPath);
   } finally {
     fs.rmSync(temporary, { force: true });
   }
