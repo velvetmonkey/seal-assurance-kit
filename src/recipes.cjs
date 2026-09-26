@@ -65,22 +65,37 @@ function recipeContext(manifest) {
   return { manifest, policy, guarded, mappings: [], notices: [] };
 }
 
+// Split on non-letters; compound role terms match contiguous whole tokens.
+function matchesWord(text, word) {
+  const tokens = text.split(/[^a-z]+/).filter(Boolean);
+  const phrase = word.split(/[^a-z]+/).filter(Boolean);
+  return tokens.some((_, start) => phrase.every((token, offset) => tokens[start + offset] === token));
+}
+
 function findByWords(candidates, words) {
-  for (const word of words) {
-    const found = candidates.find((candidate) => candidate.text.includes(word));
-    if (found) return found;
-  }
-  return null;
+  const scored = candidates.map((candidate) => ({
+    ...candidate,
+    score: words.filter((word) => matchesWord(candidate.text, word)).length,
+  }));
+  // A documented total order, independent of manifest order and locale.
+  scored.sort((a, b) => b.score - a.score || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  return scored[0];
 }
 
 function selectRole(context, role) {
   const words = ROLE_WORDS[role];
   const semantic = findByWords(context.guarded, words.semantic);
-  const selected = semantic || findByWords(context.guarded, words.fallback) || context.guarded[0];
-  const bestFit = semantic === null;
-  const notice = bestFit
+  const selected = semantic.score > 0 ? semantic : findByWords(context.guarded, words.fallback);
+  if (selected.score === 0) {
+    const error = new Error(`recipe role '${role}': no tool matched any of its terms (semantic: ${words.semantic.join(", ")}; fallback: ${words.fallback.join(", ") || "none"}); supply a manifest with a matching guarded tool or choose a different recipe`);
+    error.name = "RecipeRoleUnmatchedError";
+    throw error;
+  }
+  const bestFit = semantic.score === 0;
+  const rule = ` Score ${selected.score}; ties use ascending tool name (JavaScript string order).`;
+  const notice = (bestFit
     ? `EDIT-ME: best-fit mapping: role '${role}' → tool '${selected.name}'. Review whether this recipe suits this server at all.`
-    : `recipe mapping: role '${role}' → real manifest tool '${selected.name}'`;
+    : `recipe mapping: role '${role}' → real manifest tool '${selected.name}'`) + rule;
   context.mappings.push({ role, tool: selected.name, bestFit, notice });
   if (bestFit) context.notices.push(notice);
   return selected.name;

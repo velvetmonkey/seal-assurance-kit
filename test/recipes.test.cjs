@@ -54,8 +54,20 @@ for (const [recipe, expected] of Object.entries(RECIPE_ACTIVE)) {
       const signedPath = path.join(dir, "trusted.json");
       fs.writeFileSync(keyPath, "07".repeat(32));
 
+      const unmatchedRole = filename.startsWith("dbhub") && recipe !== "prod-db"
+        ? ({ deploy: "rollback", "token-governor": "payment" })[recipe]
+        : filename.startsWith("filesystem") ? ({ deploy: "rollback", "token-governor": "payment" })[recipe]
+        : filename.startsWith("github") && recipe === "token-governor" ? "payment" : undefined;
+      if (unmatchedRole) {
+        const refused = run(["init", "--recipe", recipe, manifestPath, "--out", policyPath], 1);
+        assert.ok(refused.includes(`role '${unmatchedRole}'`), refused);
+        assert.match(refused, /no tool matched any of its terms/);
+        assert.equal(fs.existsSync(policyPath), false, "unmatched role wrote a policy");
+        return;
+      }
       const collision = (filename.startsWith("dbhub") && recipe !== "prod-db") ||
-        (filename.startsWith("filesystem") && recipe === "token-governor");
+        (filename.startsWith("filesystem") && recipe === "deploy") ||
+        (filename.startsWith("github") && recipe === "mesh");
       if (collision) {
         const refused = run(["init", "--recipe", recipe, manifestPath, "--out", policyPath], 1);
         assert.match(refused, /roles '.*' and '.*' both select tool/);
@@ -164,7 +176,7 @@ for (const [recipe, first, second, firstDescription, secondDescription] of DISTI
   const tool = (name, description) => ({ name, description, annotations: { destructiveHint: true } });
   for (const extra of [false, true]) {
     test(`${recipe} refuses role collision with ${extra ? "an extra generic tool" : "one guarded tool"}`, () => {
-      const tools = [tool("do_thing", "does a thing")];
+      const tools = [tool("do_thing", `${firstDescription}; ${secondDescription}`)];
       if (extra) tools.push(tool("other_action", "does something else"));
       assert.throws(() => applyRecipe({ server: "demo@1.0.0", tools }, recipe), (error) => {
         assert.ok(error instanceof Error);
@@ -194,7 +206,7 @@ for (const [recipe, first, second, firstDescription, secondDescription] of DISTI
 
 test("single-role kernels and prod-db still accept one guarded tool", () => {
   const manifest = { server: "demo@1.0.0", tools: [
-    { name: "do_thing", description: "does a thing", annotations: { destructiveHint: true } },
+    { name: "do_thing", description: "deploy shared", annotations: { destructiveHint: true } },
   ] };
   assertGeneratedPolicy(applyRecipe(manifest, "prod-db").policy, manifest, RECIPE_ACTIVE["prod-db"]);
   const base = addKernelToPolicy({ epoch: 1 }, manifest, "S").policy;
@@ -227,4 +239,80 @@ test("init preserves annotation reasons and scan agrees on conflict safety", () 
   const { classify } = require("../src/scan.cjs");
   assert.deepEqual(tools.map(tool => classify(tool, config).effect), ["mutating", "readonly", "mutating", "mutating"]);
   assert.match(run(["scan", manifest, output]), /ANNOTATION CONFLICT/);
+});
+
+function guardedTool(name, description = "") {
+  return { name, description, annotations: { destructiveHint: true } };
+}
+
+function permutations(items) {
+  if (!items.length) return [[]];
+  return items.flatMap((item, index) => permutations(items.filter((_, i) => i !== index)).map(rest => [item, ...rest]));
+}
+
+test("row 43 rejects substring payment and token matches", () => {
+  assert.throws(() => applyRecipe({ server: "row43", tools: [guardedTool("payload_reader"), guardedTool("tokenizer")] }, "token-governor"),
+    { name: "RecipeRoleUnmatchedError" });
+});
+
+test("row 44 all six permutations use the documented name tie order", () => {
+  const tools = [guardedTool("deploy_west"), guardedTool("deploy_east"), guardedTool("rollback_one")];
+  for (const ordered of permutations(tools)) {
+    const result = applyRecipe({ server: "row44", tools: ordered }, "deploy");
+    assert.deepEqual(result.mappings.map(m => [m.role, m.tool]), [["deploy", "deploy_east"], ["rollback", "rollback_one"]]);
+    assert.match(result.mappings[0].notice, /ties use ascending tool name \(JavaScript string order\)/);
+  }
+});
+
+test("compound publish fallback matches create_or_update as whole contiguous tokens", () => {
+  for (const name of ["create_or_update", "create-or-update", "create or update"]) {
+    const result = applyRecipe({ server: "compound", tools: [guardedTool("shared_store"), guardedTool(name)] }, "mesh");
+    assert.equal(result.mappings[1].tool, name);
+    assert.match(result.mappings[1].notice, /Score 1;/);
+  }
+  assert.throws(() => applyRecipe({ server: "compound", tools: [guardedTool("a_shared_store"), guardedTool("create_or_updated")] }, "mesh"),
+    { name: "RecipeRoleUnmatchedError" });
+});
+
+test("role scores every candidate using distinct whole description words", () => {
+  const tools = [guardedTool("a_action", "deploy deployment"), guardedTool("z_action", "release deploy rollout"), guardedTool("rollback")];
+  for (const ordered of permutations(tools)) {
+    const result = applyRecipe({ server: "score", tools: ordered }, "deploy");
+    assert.equal(result.mappings[0].tool, "z_action");
+    assert.match(result.mappings[0].notice, /Score 3;/);
+  }
+});
+
+test("zero-score fallback refuses independently of manifest order", () => {
+  for (const tools of permutations([guardedTool("do_thing"), guardedTool("other_action")])) {
+    assert.throws(() => applyRecipe({ server: "fallback", tools }, "deploy"), error =>
+      error.name === "RecipeRoleUnmatchedError" && error.message.includes("'deploy'"));
+  }
+});
+
+test("filesystem token-governor refuses unmatched payment by name without writing", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-no-match-"));
+  const output = path.join(dir, "policy.json");
+  const refused = run(["init", "--recipe", "token-governor", path.join(MANIFEST_ROOT, MANIFESTS[1]), "--out", output], 1);
+  assert.match(refused, /role 'payment'.*no tool matched any of its terms/);
+  assert.equal(fs.existsSync(output), false);
+  assert.throws(() => applyRecipe(JSON.parse(fs.readFileSync(path.join(MANIFEST_ROOT, MANIFESTS[1]))), "token-governor"), { name: "RecipeRoleUnmatchedError" });
+});
+
+test("deployed_east prefix refuses unmatched deploy by name without writing", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-prefix-"));
+  const manifest = path.join(dir, "manifest.json");
+  const output = path.join(dir, "policy.json");
+  const tools = [guardedTool("deployed_east"), guardedTool("rollback_one"), guardedTool("other_action")];
+  fs.writeFileSync(manifest, JSON.stringify({ server: "prefix", tools }));
+  const refused = run(["init", "--recipe", "deploy", manifest, "--out", output], 1);
+  assert.match(refused, /role 'deploy'.*no tool matched any of its terms/);
+  assert.equal(fs.existsSync(output), false);
+});
+
+test("positive fallback still assigns a role", () => {
+  const result = applyRecipe({ server: "fallback", tools: [guardedTool("write_notes"), guardedTool("payment")] }, "token-governor");
+  assert.equal(result.mappings[0].tool, "write_notes");
+  assert.equal(result.mappings[0].bestFit, true);
+  assert.match(result.mappings[0].notice, /Score 1;/);
 });
