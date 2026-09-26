@@ -56,13 +56,15 @@ function scaffoldManifest(manifest) {
   };
 }
 
-function initPolicy(manifestPath, { outputPath, recipe, force = false } = {}) {
+function initPolicy(manifestPath, { outputPath, recipe, force = false, allowEmpty = false } = {}) {
   let manifest;
   try { manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")); }
   catch (error) { throw new Error(`cannot read manifest: ${error.message}`); }
   const generated = recipe
     ? require("./recipes.cjs").applyRecipe(manifest, recipe)
     : { policy: scaffoldManifest(manifest), participation: null, mappings: [], notices: [] };
+  if (!recipe && manifest.tools.length === 0 && !allowEmpty)
+    throw new Error(`refusing manifest ${manifestPath}: policy would gate no tool; use --allow-empty to request an empty policy`);
   const policy = generated.policy;
   const output = outputPath || defaultOutputPath(manifestPath);
   try {
