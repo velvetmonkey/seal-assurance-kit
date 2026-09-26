@@ -55,7 +55,8 @@ for (const [recipe, expected] of Object.entries(RECIPE_ACTIVE)) {
       fs.writeFileSync(keyPath, "07".repeat(32));
 
       const collision = (filename.startsWith("dbhub") && recipe !== "prod-db") ||
-        (filename.startsWith("filesystem") && recipe === "token-governor");
+        (filename.startsWith("filesystem") && recipe === "deploy") ||
+        (filename.startsWith("github") && recipe === "mesh");
       if (collision) {
         const refused = run(["init", "--recipe", recipe, manifestPath, "--out", policyPath], 1);
         assert.match(refused, /roles '.*' and '.*' both select tool/);
@@ -227,4 +228,53 @@ test("init preserves annotation reasons and scan agrees on conflict safety", () 
   const { classify } = require("../src/scan.cjs");
   assert.deepEqual(tools.map(tool => classify(tool, config).effect), ["mutating", "readonly", "mutating", "mutating"]);
   assert.match(run(["scan", manifest, output]), /ANNOTATION CONFLICT/);
+});
+
+function guardedTool(name, description = "") {
+  return { name, description, annotations: { destructiveHint: true } };
+}
+
+function permutations(items) {
+  if (!items.length) return [[]];
+  return items.flatMap((item, index) => permutations(items.filter((_, i) => i !== index)).map(rest => [item, ...rest]));
+}
+
+test("row 43 rejects substring payment and token matches", () => {
+  assert.throws(() => applyRecipe({ server: "row43", tools: [guardedTool("payload_reader"), guardedTool("tokenizer")] }, "token-governor"),
+    { name: "RecipeRoleCollisionError" });
+});
+
+test("row 44 all six permutations use the documented name tie order", () => {
+  const tools = [guardedTool("deploy_west"), guardedTool("deploy_east"), guardedTool("rollback_one")];
+  for (const ordered of permutations(tools)) {
+    const result = applyRecipe({ server: "row44", tools: ordered }, "deploy");
+    assert.deepEqual(result.mappings.map(m => [m.role, m.tool]), [["deploy", "deploy_east"], ["rollback", "rollback_one"]]);
+    assert.match(result.mappings[0].notice, /ties use ascending tool name \(JavaScript string order\)/);
+  }
+});
+
+test("compound publish fallback matches create_or_update as whole contiguous tokens", () => {
+  for (const name of ["create_or_update", "create-or-update", "create or update"]) {
+    const result = applyRecipe({ server: "compound", tools: [guardedTool("shared_store"), guardedTool(name)] }, "mesh");
+    assert.equal(result.mappings[1].tool, name);
+    assert.match(result.mappings[1].notice, /Score 1;/);
+  }
+  assert.throws(() => applyRecipe({ server: "compound", tools: [guardedTool("a_shared_store"), guardedTool("create_or_updated")] }, "mesh"),
+    { name: "RecipeRoleCollisionError" });
+});
+
+test("role scores every candidate using distinct whole description words", () => {
+  const tools = [guardedTool("a_action", "deploy deployment"), guardedTool("z_action", "release deploy rollout"), guardedTool("rollback")];
+  for (const ordered of permutations(tools)) {
+    const result = applyRecipe({ server: "score", tools: ordered }, "deploy");
+    assert.equal(result.mappings[0].tool, "z_action");
+    assert.match(result.mappings[0].notice, /Score 3;/);
+  }
+});
+
+test("zero-score fallback is independent of manifest order and preserves distinct-role refusal", () => {
+  for (const tools of permutations([guardedTool("do_thing"), guardedTool("other_action")])) {
+    assert.throws(() => applyRecipe({ server: "fallback", tools }, "deploy"), error =>
+      error.name === "RecipeRoleCollisionError" && error.message.includes("'do_thing'"));
+  }
 });
