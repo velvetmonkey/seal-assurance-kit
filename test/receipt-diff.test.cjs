@@ -432,5 +432,74 @@ test("unknown producer-local fields still use the MINOR fallback", () => {
   assert.equal(res.code, 0, res.out);
   const j = JSON.parse(res.out);
   assert.deepEqual(j.authorization, []);
-  assert.deepEqual(j.minor, [{ field: "producer_extension", b: b.producer_extension, note: "producer-local block" }]);
+  assert.deepEqual(j.minor, [{ field: "producer_extension", b: b.producer_extension, note: "added" }]);
 });
+
+
+test("unknown null presence: added and removed are MINOR", () => {
+  const a = allow(), b = { ...a, extra_probe: null };
+  for (const [left, right, note] of [[a, b, "added"], [b, a, "removed"]]) {
+    const res = run([write("presence-a.json", left), write("presence-b.json", right), "--json"]);
+    assert.equal(res.code, 0, res.out);
+    const j = JSON.parse(res.out);
+    assert.deepEqual(j.authorization, []);
+    assert.deepEqual(j.minor, [{ field: "extra_probe", ...(note === "added" ? { b: null } : { a: null }), note }]);
+  }
+  const same = JSON.parse(run([write("presence-same-a.json", b), write("presence-same-b.json", b), "--json"]).out);
+  assert.deepEqual(same.authorization, []);
+  assert.deepEqual(same.minor, []);
+});
+
+test("duplicate grant count: AUTH drift in both directions", () => {
+  const a = allow(), b = structuredClone(a);
+  b.granted_capabilities.push(structuredClone(b.granted_capabilities[0]));
+  b.kernel_inputs = { approvals: b.granted_capabilities.map(g => g.target), votes: "", grants: "", forecasts: "" };
+  const file = write("duplicate-grant.json", b);
+  const verified = execFileSync(process.execPath, [BIN, "verify", file], { encoding: "utf8" });
+  assert.match(verified, /PASS  VERIFIED/);
+  for (const [left, right, note] of [[a, b, "+1 grant(s)"], [b, a, "-1 grant(s)"]]) {
+    const res = run([write("grant-count-a.json", left), write("grant-count-b.json", right), "--json"]);
+    assert.equal(res.code, 1, res.out);
+    const j = JSON.parse(res.out);
+    assert.equal(j.result, "AUTHORIZATION DRIFT");
+    assert.deepEqual(j.authorization, [{ field: "granted_capabilities", a: left.granted_capabilities, b: right.granted_capabilities, note }]);
+  }
+});
+
+// Bypass receipts may omit grants or carry null; these are distinct from
+// an empty grant multiset. Keep all 16 ordered pairs in the npm test chain.
+const grantStates = ["absent", "null", "empty", "one"];
+for (const leftState of grantStates) {
+  for (const rightState of grantStates) {
+    test(`bypass grant states: ${leftState} -> ${rightState}`, async () => {
+      const F = await fmt();
+      const receipt = (state) => {
+        const r = JSON.parse(fs.readFileSync(FIX("receipt-bypass.json"), "utf8"));
+        if (state === "null") r.granted_capabilities = null;
+        if (state === "empty") r.granted_capabilities = [];
+        if (state === "one") r.granted_capabilities = [allow().granted_capabilities[0]];
+        assert.equal(F.validateReceipt(r).ok, true, `${state} must be schema-valid`);
+        return r;
+      };
+      const a = receipt(leftState), b = receipt(rightState);
+      const res = run([write(`states-${leftState}-a.json`, a), write(`states-${rightState}-b.json`, b), "--json"]);
+      const same = leftState === rightState;
+      assert.equal(res.code, same ? 0 : 1, res.out);
+      const j = JSON.parse(res.out);
+      assert.deepEqual(j.minor, []);
+      assert.equal(j.schema_drift, null);
+      if (same) {
+        assert.deepEqual(j.authorization, []);
+        assert.equal(j.result, "NO AUTHORIZATION-SURFACE DRIFT");
+      } else {
+        const note = leftState === "absent" ? "added" : rightState === "absent" ? "removed"
+          : leftState === "null" || rightState === "null" ? "value changed"
+          : leftState === "empty" ? "+1 grant(s)" : "-1 grant(s)";
+        assert.equal(j.result, "AUTHORIZATION DRIFT");
+        assert.deepEqual(j.authorization, [{ field: "granted_capabilities",
+          ...(leftState === "absent" ? {} : { a: a.granted_capabilities }),
+          ...(rightState === "absent" ? {} : { b: b.granted_capabilities }), note }]);
+      }
+    });
+  }
+}
