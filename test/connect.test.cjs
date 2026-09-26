@@ -5,7 +5,17 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const Module = require("node:module");
 const { connect, disconnect, locations, renderStarterProfile } = require("../src/connect.cjs");
+
+const CONNECT_FILENAME = require.resolve("../src/connect.cjs");
+const srcRequire = Module.createRequire(CONNECT_FILENAME);
+function connectModuleRequire(fsImpl) {
+  return (name) => {
+    if (fsImpl && (name === "node:fs" || name === "fs")) return fsImpl;
+    return srcRequire(name);
+  };
+}
 
 function fixture() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-connect-"));
@@ -41,8 +51,8 @@ test("connect compares the requested server and definition on both surfaces", ()
     // Exercise Desktop behavior on its documented macOS layout on every test host.
     // Inject a module-local process without changing the host process.platform.
     const sandbox = { exports: {} };
-    require("node:vm").runInNewContext(fs.readFileSync(require.resolve("../src/connect.cjs"), "utf8"), {
-      module: sandbox, require, Buffer, process: { ...process, platform: "darwin" },
+    require("node:vm").runInNewContext(fs.readFileSync(CONNECT_FILENAME, "utf8"), {
+      module: sandbox, require: connectModuleRequire(), Buffer, process: { ...process, platform: "darwin" },
     });
     const client = desktop ? sandbox.exports : { connect, locations };
     const loc = client.locations(options);
@@ -165,8 +175,8 @@ for (const name of ["plain", "weird\\that", "weird\\\\that", 'weird\\path"dir', 
         JSON.stringify({ mcpServers: { sealed: server } }));
       const options = { cwd: dir, home: dir, desktop };
       const sandbox = { exports: {} };
-      require("node:vm").runInNewContext(fs.readFileSync(require.resolve("../src/connect.cjs"), "utf8"), {
-        module: sandbox, require, Buffer, process: { ...process, platform: "darwin" },
+      require("node:vm").runInNewContext(fs.readFileSync(CONNECT_FILENAME, "utf8"), {
+        module: sandbox, require: connectModuleRequire(), Buffer, process: { ...process, platform: "darwin" },
       });
       const client = desktop ? sandbox.exports : { connect, disconnect, locations };
       assert.doesNotThrow(() => client.connect(options));
@@ -264,11 +274,14 @@ test("project locations stay independent of platform and APPDATA", () => {
 
 function atomicWriter(fsImpl = fs) {
   const sandbox = { exports: {} };
-  require("node:vm").runInNewContext(
-    fs.readFileSync(require.resolve("../src/connect.cjs"), "utf8") + "\nmodule.exports = atomicWrite;",
-    { module: sandbox, require: (name) => name === "node:fs" ? fsImpl : require(name), process },
-  );
-  return sandbox.exports;
+  const filename = require.resolve("../src/atomic-write.cjs");
+  require("node:vm").runInNewContext(fs.readFileSync(filename, "utf8"), {
+    module: sandbox,
+    require: (name) => (name === "node:fs" || name === "fs") ? fsImpl : require(name),
+    process,
+    Buffer,
+  });
+  return sandbox.exports.atomicWrite;
 }
 
 test("atomic writes bypass a read-only stale PID temporary without changing it", () => {

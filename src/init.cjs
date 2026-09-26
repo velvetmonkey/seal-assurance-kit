@@ -2,8 +2,8 @@
 "use strict";
 
 const fs = require("node:fs");
-const path = require("node:path");
 
+const { atomicWrite } = require("./atomic-write.cjs");
 const { scaffoldReason } = require("./tool-annotations.cjs");
 
 const ALLOW_COMMENT = "unverified suggestion — server self-described readOnly";
@@ -65,9 +65,8 @@ function initPolicy(manifestPath, { outputPath, recipe, force = false } = {}) {
     : { policy: scaffoldManifest(manifest), participation: null, mappings: [], notices: [] };
   const policy = generated.policy;
   const output = outputPath || defaultOutputPath(manifestPath);
-  fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
   try {
-    fs.writeFileSync(output, JSON.stringify(policy, null, 2) + "\n", { mode: 0o600, flag: force ? "w" : "wx" });
+    atomicWrite(output, JSON.stringify(policy, null, 2) + "\n", { mode: 0o600, force });
   } catch (error) {
     if (error.code === "EEXIST") throw new Error(`refusing to overwrite ${output}; use --force to replace it`);
     throw error;
@@ -88,7 +87,7 @@ function addKernel(manifestPath, symbol, { policyPath, experimental = false } = 
   try { policy = JSON.parse(fs.readFileSync(target, "utf8")); }
   catch (error) { throw new Error(`cannot read existing policy ${target}: ${error.message}`); }
   const result = require("./recipes.cjs").addKernelToPolicy(policy, manifest, symbol, { experimental });
-  fs.writeFileSync(target, JSON.stringify(result.policy, null, 2) + "\n", { mode: 0o600 });
+  atomicWrite(target, JSON.stringify(result.policy, null, 2) + "\n", { mode: 0o600, force: true });
   return { output: target, symbol: String(symbol).toUpperCase(), ...result };
 }
 

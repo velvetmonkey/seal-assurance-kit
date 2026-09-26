@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { isDeepStrictEqual } = require("node:util");
+const { atomicWrite } = require("./atomic-write.cjs");
 
 function sha256(text) { return crypto.createHash("sha256").update(text).digest("hex"); }
 
@@ -36,17 +37,6 @@ function parseObject(text, label) {
   try { value = JSON.parse(text); } catch (error) { throw new Error(`${label} is not valid JSON: ${error.message}`); }
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be a JSON object`);
   return value;
-}
-
-function atomicWrite(file, text, mode = 0o600) {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temporary = `${file}.seal-tmp-${process.pid}-${crypto.randomUUID()}`;
-  try {
-    fs.writeFileSync(temporary, text, { mode });
-    fs.renameSync(temporary, file);
-  } finally {
-    fs.rmSync(temporary, { force: true });
-  }
 }
 
 function renderStarterProfile(text, cwd) {

@@ -3,7 +3,7 @@
 
 const crypto = require("node:crypto");
 const fs = require("node:fs");
-const path = require("node:path");
+const { atomicWrite } = require("./atomic-write.cjs");
 const { validateTrustedConfig } = require("./trusted-config.cjs");
 
 const PKCS8_ED25519_PREFIX = Buffer.from("302e020100300506032b657004220420", "hex");
@@ -63,9 +63,8 @@ function signPreparedPolicy(prepared, { keyPath, outputPath, force = false }) {
   const signature = crypto.sign(null, Buffer.from(payload, "utf8"), privateKey).toString("hex");
   const envelope = JSON.stringify({ payload, signature }) + "\n";
   const out = outputPath || `${prepared.policyPath}.signed.json`;
-  fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
   try {
-    fs.writeFileSync(out, envelope, { mode: 0o600, flag: force ? "w" : "wx" });
+    atomicWrite(out, envelope, { mode: 0o600, force });
   } catch (error) {
     if (error.code === "EEXIST") throw new Error(`refusing to overwrite ${out}; use --force to replace it`);
     throw error;
