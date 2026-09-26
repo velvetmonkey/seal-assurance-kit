@@ -86,8 +86,13 @@ function selectRole(context, role) {
   const words = ROLE_WORDS[role];
   const semantic = findByWords(context.guarded, words.semantic);
   const selected = semantic.score > 0 ? semantic : findByWords(context.guarded, words.fallback);
+  if (selected.score === 0) {
+    const error = new Error(`recipe role '${role}': no tool matched any of its terms (semantic: ${words.semantic.join(", ")}; fallback: ${words.fallback.join(", ") || "none"}); supply a manifest with a matching guarded tool or choose a different recipe`);
+    error.name = "RecipeRoleUnmatchedError";
+    throw error;
+  }
   const bestFit = semantic.score === 0;
-  const rule = ` Score ${selected.score}; ties use ascending tool name (JavaScript string order), including zero-score best-fit ties.`;
+  const rule = ` Score ${selected.score}; ties use ascending tool name (JavaScript string order).`;
   const notice = (bestFit
     ? `EDIT-ME: best-fit mapping: role '${role}' → tool '${selected.name}'. Review whether this recipe suits this server at all.`
     : `recipe mapping: role '${role}' → real manifest tool '${selected.name}'`) + rule;
