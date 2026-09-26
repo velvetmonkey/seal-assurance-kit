@@ -123,7 +123,7 @@ function integrityFindings(F, r) {
 
 function canon(F, v) {
   // Stable serialization for equality checks where the schema does NOT make
-  // order significant (grants are a set; config/approval are objects whose
+  // order significant (grants are a multiset; config/approval are objects whose
   // meaning is key-value). Sorting keys here is a comparison discipline only.
   if (v === null || typeof v !== "object") return JSON.stringify(v);
   if (Array.isArray(v)) return "[" + v.map((x) => canon(F, x)).join(",") + "]";
@@ -177,12 +177,25 @@ function diffReceipts(F, A, B) {
     }
     if (f === "granted_capabilities") {
       if (a === undefined && b === undefined) continue;
-      const sa = new Set((Array.isArray(a) ? a : []).map((g) => canon(F, g)));
-      const sb = new Set((Array.isArray(b) ? b : []).map((g) => canon(F, g)));
-      const added = [...sb].filter((g) => !sa.has(g)).sort();
-      const removed = [...sa].filter((g) => !sb.has(g)).sort();
-      if (added.length || removed.length) {
-        push(auth, f, a, b, [removed.length ? `-${removed.length} grant(s)` : "", added.length ? `+${added.length} grant(s)` : ""].filter(Boolean).join(" "));
+      if ((a === undefined) !== (b === undefined)) {
+        push(auth, f, a, b, a === undefined ? "added" : "removed");
+        continue;
+      }
+      // Grants are a multiset: verification preserves duplicate approvals.
+      const counts = (grants) => {
+        const out = new Map();
+        for (const grant of grants) {
+          const key = canon(F, grant);
+          out.set(key, (out.get(key) || 0) + 1);
+        }
+        return out;
+      };
+      const sa = counts(a), sb = counts(b);
+      let added = 0, removed = 0;
+      for (const [key, count] of sb) added += Math.max(0, count - (sa.get(key) || 0));
+      for (const [key, count] of sa) removed += Math.max(0, count - (sb.get(key) || 0));
+      if (added || removed) {
+        push(auth, f, a, b, [removed ? `-${removed} grant(s)` : "", added ? `+${added} grant(s)` : ""].filter(Boolean).join(" "));
       }
       continue;
     }
@@ -194,7 +207,8 @@ function diffReceipts(F, A, B) {
   }
   for (const [obj, key] of AUTH_SUBFIELDS) {
     const a = A.receipt[obj]?.[key], b = B.receipt[obj]?.[key];
-    if (canon(F, a ?? null) !== canon(F, b ?? null)) push(auth, `${obj}.${key}`, a, b);
+    if ((a === undefined) !== (b === undefined)) { push(auth, `${obj}.${key}`, a, b, a === undefined ? "added" : "removed"); continue; }
+    if (a !== undefined && canon(F, a) !== canon(F, b)) push(auth, `${obj}.${key}`, a, b);
   }
 
   for (const f of MINOR_FIELDS) {
@@ -204,7 +218,8 @@ function diffReceipts(F, A, B) {
   }
   for (const [obj, key] of MINOR_SUBFIELDS) {
     const a = A.receipt[obj]?.[key], b = B.receipt[obj]?.[key];
-    if (canon(F, a ?? null) !== canon(F, b ?? null)) push(minor, `${obj}.${key}`, a, b);
+    if ((a === undefined) !== (b === undefined)) { push(minor, `${obj}.${key}`, a, b, a === undefined ? "added" : "removed"); continue; }
+    if (a !== undefined && canon(F, a) !== canon(F, b)) push(minor, `${obj}.${key}`, a, b);
   }
 
   // Producer-local / unknown top-level fields (schema: verifiers MUST ignore).
@@ -212,7 +227,8 @@ function diffReceipts(F, A, B) {
     .filter((k) => !CONSUMED.has(k)).sort();
   for (const f of unknown) {
     const a = A.receipt[f], b = B.receipt[f];
-    if (canon(F, a ?? null) !== canon(F, b ?? null)) push(minor, f, a, b, "producer-local block");
+    if ((a === undefined) !== (b === undefined)) { push(minor, f, a, b, a === undefined ? "added" : "removed"); continue; }
+    if (a !== undefined && canon(F, a) !== canon(F, b)) push(minor, f, a, b, "producer-local block");
   }
 
   return { auth, minor };
