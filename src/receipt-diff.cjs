@@ -181,6 +181,12 @@ function diffReceipts(F, A, B) {
         push(auth, f, a, b, a === undefined ? "added" : "removed");
         continue;
       }
+      // Bypass receipts can carry null (or another non-array JSON value).
+      // Compare those values without folding them into an empty multiset.
+      if (!Array.isArray(a) || !Array.isArray(b)) {
+        if (canon(F, a) !== canon(F, b)) push(auth, f, a, b, "value changed");
+        continue;
+      }
       // Grants are a multiset: verification preserves duplicate approvals.
       const counts = (grants) => {
         const out = new Map();
