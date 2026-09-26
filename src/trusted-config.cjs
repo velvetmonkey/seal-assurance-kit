@@ -275,7 +275,10 @@ function state(kernel, status, reason) {
 
 function analyzeParticipation(config) {
   const byKey = Object.fromEntries(KERNELS.map((kernel) => [kernel.key, kernel]));
-  const states = [state(byKey.safety, "active", "required; gates every tool call")];
+  const safetyReason = config.safety.tools.length === 0
+    ? "required; gates every tool call; this policy guards 0 tools; every call is denied (no matching policy rule)"
+    : "required; gates every tool call";
+  const states = [state(byKey.safety, "active", safetyReason)];
 
   // enabled:false collapse (PolicyBundle effective*): a disabled section maps to
   // absent before the host mapping — consensus/convergence/linear/budget go

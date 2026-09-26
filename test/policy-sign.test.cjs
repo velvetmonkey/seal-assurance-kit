@@ -184,3 +184,38 @@ test("signing refuses existing destinations unless --force is explicit", () => {
     assert.deepEqual(JSON.parse(JSON.parse(fs.readFileSync(out)).payload), policy);
   }
 });
+
+for (const empty of [true, false]) {
+  test(`CLI sign ${empty ? "empty Safety line states the deny default" : "one-tool full output preserves main bytes"}`, (t) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seal-sign-safety-"));
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const input = path.join(dir, "policy.json"), key = path.join(dir, "key"), out = path.join(dir, "trusted.json");
+    const config = structuredClone(policy);
+    config.safety.tools = empty ? [] : [config.safety.tools[1]];
+    fs.writeFileSync(input, JSON.stringify(config));
+    fs.writeFileSync(key, "07".repeat(32));
+    const result = spawnSync(process.execPath, [path.resolve(__dirname, "../bin/seal"),
+      "policy", "sign", input, "--key", key, "--out", out, "--yes"], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(JSON.parse(fs.readFileSync(out, "utf8")).payload), config);
+    const safetyLine = "    Safety (S) — required; gates every tool call" + (empty
+      ? "; this policy guards 0 tools; every call is denied (no matching policy rule)" : "");
+    assert.equal(result.stderr.split("\n").find((line) => line.includes("Safety (S) —")), safetyLine);
+    // Exact stdout/stderr contract captured from untouched main. Dynamic values
+    // are computed from the input and signing key, never copied from CLI output.
+    const hash = crypto.createHash("sha256").update(JSON.stringify(config)).digest("hex");
+    const publicKey = "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c";
+    assert.equal(result.stdout, `signed policy  ${out}\n  policy_hash=${hash}\n  public_key=${publicKey}\n  verify/run: seal-host-rs --config ${out} --pubkey ${publicKey} ...\n`);
+    assert.equal(result.stderr, [
+      "EFFECTIVE KERNEL PARTICIPATION (signed payload):",
+      "  COMPOSED INVARIANT: a mediated ALLOW requires Safety and every configured kernel whose gate covers that call to allow; only ACTIVE kernels below can impose a non-vacuous constraint.",
+      "  ACTIVE (1):", safetyLine,
+      "  PRESENT-BUT-INACTIVE (0):", "    (none)", "  ABSENT/OFF (6):",
+      "    Temporal (T) — section absent; off", "    Consensus (C) — section absent; off",
+      "    Convergence (V) — section absent; off", "    Calibration (K, EXPERIMENTAL) — section absent; off",
+      "    Linear (L) — section absent; off", "    Budget (B) — section absent; off",
+      `WARNING  ${empty ? 0 : 1} guarded, 0 allow(unverified), ${empty ? 0 : 1} unknown→guarded — acknowledge effective participation and sign anyway? [y/N]`,
+      "ACKNOWLEDGED  --yes supplied; signing the displayed policy summary", "",
+    ].join("\n"));
+  });
+}
