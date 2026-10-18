@@ -53,3 +53,14 @@ test("one-tool init preserves main stdout and policy bytes", (t) => {
     },
   }, null, 2) + "\n");
 });
+
+test("removed connect commands are unknown and absent from help", () => {
+  for (const command of ["connect", "disconnect"]) {
+    const result = spawnSync(process.execPath, [cli, command, "--client", "claude"], { encoding: "utf8" });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, new RegExp(`unknown command: ${command}`));
+  }
+  const help = spawnSync(process.execPath, [cli, "--help"], { encoding: "utf8" });
+  assert.equal(help.status, 0);
+  assert.doesNotMatch(help.stdout, /^.*connect.*$/im);
+});

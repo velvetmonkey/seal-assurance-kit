@@ -49,8 +49,6 @@ const HELP = [
   "                                 linear/budget sections, per-section `enabled`;",
   "                                 unknown section/entry keys are refused exactly",
   "                                 where the verified kernel parser refuses them)",
-  "  seal connect --client claude [--desktop] [--profile <profile.json>]",
-  "  seal disconnect --client claude [--desktop]",
   "",
   "  --help, -h      this help",
   "  --version, -V   print the kit version",
@@ -230,36 +228,6 @@ async function main() {
       console.log(`  policy_hash=${result.policyHash}`);
       console.log(`  public_key=${result.publicKey}`);
       console.log(`  verify/run: seal-host-rs --config ${result.output} --pubkey ${result.publicKey} ...`);
-      process.exit(0);
-    } catch (error) {
-      console.error(`FAIL  ${error.message}`);
-      process.exit(1);
-    }
-  }
-  if (cmd === "connect" || cmd === "disconnect") {
-    const args = process.argv.slice(3);
-    const clientIndex = args.indexOf("--client");
-    const client = clientIndex >= 0 ? args[clientIndex + 1] : undefined;
-    const desktop = args.includes("--desktop");
-    if (client !== "claude") usageError(`usage: seal ${cmd} --client claude [--desktop]${cmd === "connect" ? " [--profile <profile.json>]" : ""}`);
-    const defaultProfile = path.join(process.cwd(), "profiles", "hosts", desktop ? "claude-desktop.json" : "claude-code.json");
-    const profileIndex = args.indexOf("--profile");
-    const profile = profileIndex >= 0 ? args[profileIndex + 1] : undefined;
-    const consumed = new Set(["--client", "claude", "--desktop"]);
-    if (profile) { consumed.add("--profile"); consumed.add(profile); }
-    const unknown = args.find((arg) => !consumed.has(arg));
-    if (unknown || (cmd === "disconnect" && profile))
-      usageError(`usage: seal ${cmd} --client claude [--desktop]${cmd === "connect" ? " [--profile <profile.json>]" : ""}`);
-    const integration = require(path.join(__dirname, "../src/connect.cjs"));
-    try {
-      const result = cmd === "connect"
-        ? integration.connect({ profilePath: path.resolve(profile || defaultProfile), desktop })
-        : integration.disconnect({ desktop });
-      console.log(`${result.message}: ${result.label}`);
-      console.log(`  config: ${result.config}`);
-      if (result.metadata) console.log(`  rollback record: ${result.metadata}`);
-      console.log(`  rollback: seal disconnect --client claude${desktop ? " --desktop" : ""}`);
-      console.log(desktop ? "  restart: fully quit and reopen Claude Desktop" : "  verify: claude mcp list, then /mcp");
       process.exit(0);
     } catch (error) {
       console.error(`FAIL  ${error.message}`);
